@@ -96,30 +96,16 @@
             border: 2px solid rgba(255, 255, 255, 0.8);
             box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5); /* Dim overlay "cutout" */
             z-index: 10;
-            overflow: hidden; /* To contain the line */
+            /* overflow: hidden; */ /* No longer needed as line is gone */
             border-radius: 8px;
         }
 
+        /* --- REMOVED ANIMATING LINE --- */
         #viewfinder-line {
-            position: absolute;
-            top: 0; /* Start at the top */
-            left: 0;
-            right: 0;
-            height: 3px;
-            background: #FF0000;
-            box-shadow: 0 0 10px rgba(255, 0, 0, 0.9);
-            animation: scan-line-move 2.5s infinite alternate ease-in-out;
+           display: none;
         }
         
-        /* UPDATED Keyframe for up-and-down scanning */
-        @keyframes scan-line-move {
-            from {
-                top: 0; /* Start at the very top of the box */
-            }
-            to {
-                top: 100%; /* End at the very bottom */
-            }
-        }
+        /* --- REMOVED KEYFRAME ANIMATION --- */
         
         /* Targeting small screens for better responsiveness */
         @media (max-width: 640px) {
@@ -190,13 +176,23 @@
                         <!-- Video element will show the camera feed -->
                         <video id="scanner-video" class="w-full h-full" playsinline></video>
                         
-                        <!-- NEW: Viewfinder Box -->
+                        <!-- NEW: Viewfinder Box (Static) -->
                         <div id="viewfinder-box">
-                            <div id="viewfinder-line"></div>
+                            <!-- Removed the animating line -->
                         </div>
                     </div>
                     <div id="scanner-result" class="mt-2 text-center text-red-600 font-bold text-lg"></div>
-                    <button id="stop-scanner-btn" class="w-full mt-4 bg-red-500 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-red-600 transition-colors" onclick="toggleScannerView()">Stop Scan</button>
+                    
+                    <!-- NEW: Button Layout -->
+                    <div class="mt-4 grid grid-cols-2 gap-4">
+                        <button id="scan-trigger-btn" class="w-full bg-green-600 text-white px-5 py-3 rounded-lg shadow-sm hover:bg-green-700 transition-colors flex items-center justify-center space-x-2">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h3l2-2h6l2 2h3a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2z"></path></svg>
+                            <span>Scan</span>
+                        </button>
+                        <button id="stop-scanner-btn" class="w-full bg-red-500 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-red-600 transition-colors" onclick="toggleScannerView()">
+                            Close Camera
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Manual Scan Input -->
@@ -304,6 +300,7 @@
         let fullReport = [];
         let codeReader = null; // ZXing Code Reader instance
         let isProcessingScan = false; // NEW: Lock to prevent re-scanning same barcode immediately
+        let videoStream = null; // NEW: To hold the camera stream
 
         // --- DOM Elements ---
         const scanInput = document.getElementById('scan-input');
@@ -328,6 +325,7 @@
         const toggleScannerBtn = document.getElementById('toggle-scanner-btn');
         const scannerButtonText = document.getElementById('scanner-button-text');
         const scannerContainer = document.getElementById('scanner-container');
+        const scanTriggerBtn = document.getElementById('scan-trigger-btn'); // NEW: Scan trigger button
 
 
         // --- PWA Initialization ---
@@ -458,7 +456,7 @@
          * Starts the video stream and barcode decoding process. (Optimized for continuous scan)
          */
         async function startScanner() {
-            if (!codeReader) return;
+            if (!codeReader || videoStream) return; // Don't start if already running
             
             isProcessingScan = false; // Reset lock
             scannerResult.textContent = 'Starting camera...'; // TRANSLATED
@@ -469,37 +467,23 @@
                 const constraints = {
                     video: { facingMode: "environment" }
                 };
-
-                // Use decodeFromConstraints, but rely on the `isProcessingScan` lock 
-                // for rapid, continuous scanning instead of resetting the stream immediately.
-                codeReader.decodeFromConstraints(constraints, scannerVideo, (result, err) => {
-                    if (result && !isProcessingScan) {
-                        isProcessingScan = true; // Lock the scanner
-                        const scannedSku = result.text.trim().toUpperCase();
-                        
-                        // Handle the success visually, audibly, and logically
-                        handleScanSuccess(scannedSku);
-                    }
-                    if (err && !(err instanceof ZXing.NotFoundException || err.name === 'NotStreamReadyException')) {
-                        console.error(err);
-                        scannerResult.textContent = 'Scanning Error: ' + (err.message || 'Unknown Error'); // TRANSLATED
-                        if (err.name === 'NotAllowedError') {
-                             showTemporaryMessage('Grant permission to access the camera.', 'red'); // TRANSLATED
-                        }
-                    }
-                });
                 
-                console.log('Camera started. Decoding...');
-                scannerResult.textContent = 'Hold barcode up to the camera...'; // TRANSLATED
+                // NEW: Manually get the stream
+                videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+                scannerVideo.srcObject = videoStream;
+                scannerVideo.play();
+
+                // Add the trigger event listener ONLY when the scanner starts
+                scanTriggerBtn.addEventListener('click', handleManualScanTrigger);
+                
+                console.log('Camera started. Ready for trigger.');
+                scannerResult.textContent = 'Camera On. Click "Scan".'; // TRANSLATED
 
             } catch (error) {
                 console.error('Failed to start scanner:', error);
                 scannerResult.textContent = 'Camera Error: ' + error.message; // TRANSLATED
                 showTemporaryMessage('Failed to start camera. Please use manual input.', 'red'); // TRANSLATED
-                stopScanner(); // Stop/reset everything
-                liveScannerView.classList.add('hidden');
-                scannerButtonText.textContent = 'Start Camera Scan';
-                toggleScannerBtn.classList.replace('bg-yellow-600', 'bg-indigo-600');
+                toggleScannerView(); // This will call stopScanner()
             }
         }
 
@@ -507,17 +491,62 @@
          * Stops the video stream and releases the camera.
          */
         function stopScanner() {
+            // NEW: Stop the camera stream
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+
+            // Reset ZXing reader (good practice)
             if (codeReader) {
                 codeReader.reset();
-                scannerResult.textContent = '';
-                isProcessingScan = false; // Ensure lock is released
-                // Only enable manual input when the user explicitly stops the scanner
-                scanInput.disabled = false; 
             }
+            
+            // NEW: Remove the trigger listener to prevent errors
+            scanTriggerBtn.removeEventListener('click', handleManualScanTrigger);
+
+            scannerResult.textContent = '';
+            isProcessingScan = false; // Ensure lock is released
+            scanInput.disabled = false;
         }
         
         /**
-         * NEW: Handles visual, audio feedback, and auto-ready for next scan.
+         * NEW: This function is called ONLY when the "Scan" button is clicked.
+         */
+        async function handleManualScanTrigger() {
+            if (isProcessingScan) return; // Don't scan if already scanning
+
+            isProcessingScan = true;
+            scannerResult.textContent = 'Scanning...';
+            scannerContainer.classList.remove('scan-success-pulse'); // Clear old pulse
+
+            try {
+                // Decode one frame from the video element
+                const result = await codeReader.decodeOnceFromVideoElement(scannerVideo);
+                
+                // Found one!
+                handleScanSuccess(result.text.trim().toUpperCase());
+
+            } catch (err) {
+                // No barcode found
+                scannerResult.textContent = 'No barcode found. Try again.';
+                
+                // Only play error beep if it's a "NotFoundException"
+                if (err && err.name === 'NotFoundException') { // Check for error name
+                    playBeep(true); // Short error beep
+                } else if (err) {
+                    console.warn("Scan trigger error:", err);
+                } else {
+                    console.warn("Scan trigger error: Unknown");
+                }
+            } finally {
+                // Release the lock
+                isProcessingScan = false;
+            }
+        }
+
+        /**
+         * UPDATED: Handles visual/audio feedback for the manual trigger.
          */
         function handleScanSuccess(scannedSku) {
             // 1. Visual/Audio Feedback
@@ -527,17 +556,16 @@
             scannerContainer.classList.add('scan-success-pulse');
             
             // 2. Data Processing (This calls playBeep inside)
-            processScannedData(scannedSku);
+            processScannedData(scannedSku); // This plays the success beep
 
-            // 3. Auto-Ready for next scan (Unlock after a cool-down)
+            // 3. Auto-clear pulse and message
             setTimeout(() => {
                 scannerContainer.classList.remove('scan-success-pulse'); // Remove visual feedback
-                isProcessingScan = false; // Unlock the scanner for the next item
                 if (!liveScannerView.classList.contains('hidden')) {
-                    // Only reset message if scanner is still active
-                    scannerResult.textContent = 'Scan Success! Ready for next.'; // TRANSLATED
+                    // Reset message to be ready for next click
+                    scannerResult.textContent = 'Scan Success! Ready for next click.'; // TRANSLATED
                 }
-            }, 1000); // 1.0 seconds cool-down before next scan (can be adjusted)
+            }, 1000); // 1.0 seconds for user to see the result
         }
 
 
@@ -1048,4 +1076,5 @@
     </script>
 </body>
 </html>
+
 
