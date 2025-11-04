@@ -56,12 +56,14 @@
             --tw-text-opacity: 1;
             color: rgb(37 99 235 / var(--tw-text-opacity));
         }
-        /* Full-width video container for mobile scanning */
+        /* Full-width video container for mobile scanning (1:1 aspect ratio) */
         #scanner-container {
             width: 100%;
-            padding-top: 100%; /* 1:1 aspect ratio container */
+            padding-top: 100%; 
             position: relative;
             background-color: #000;
+            transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+            border: 4px solid #374151; /* Default border color (gray-700) */
         }
         #scanner-video {
             position: absolute;
@@ -71,6 +73,29 @@
             height: 100%;
             object-fit: cover;
         }
+        /* Visual Feedback: Green pulse on successful scan */
+        .scan-success-pulse {
+            border-color: #10B981 !important; /* emerald-500 */
+            box-shadow: 0 0 20px rgba(16, 185, 129, 0.8) !important;
+        }
+        /* Scanning Line for better focus indication */
+        #scanner-container::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: rgba(255, 0, 0, 0.7);
+            transform: translateY(-50%);
+            box-shadow: 0 0 10px rgba(255, 0, 0, 0.9);
+            animation: scan-move 2s infinite alternate; /* Simple breathing effect */
+        }
+        @keyframes scan-move {
+            from { opacity: 0.5; }
+            to { opacity: 1; }
+        }
+        
         /* Targeting small screens for better responsiveness */
         @media (max-width: 640px) {
             .max-w-7xl {
@@ -90,14 +115,14 @@
     <div class="max-w-7xl mx-auto bg-white shadow-lg rounded-lg overflow-hidden">
         <!-- Header -->
         <header class="bg-blue-600 text-white p-4">
-            <h1 class="text-xl sm:text-2xl font-bold">Inventory Mismatch Scanner</h1>
+            <h1 class="text-xl sm:text-2xl font-bold">ইনভেন্টরি অমিল স্ক্যানার (Inventory Mismatch Scanner)</h1>
         </header>
 
         <!-- Tab Navigation -->
         <nav class="flex border-b">
-            <button id="tab-scan" class="flex-1 p-3 sm:p-4 font-semibold tab-active" onclick="switchTab('scan')">Scan</button>
-            <button id="tab-history" class="flex-1 p-3 sm:p-4 font-semibold text-gray-500" onclick="switchTab('history')">Mismatch History</button>
-            <button id="tab-no-entry" class="flex-1 p-3 sm:p-4 font-semibold text-gray-500" onclick="switchTab('no-entry')">No Entry Products</button>
+            <button id="tab-scan" class="flex-1 p-3 sm:p-4 font-semibold tab-active" onclick="switchTab('scan')">স্ক্যান (Scan)</button>
+            <button id="tab-history" class="flex-1 p-3 sm:p-4 font-semibold text-gray-500" onclick="switchTab('history')">অমিলের তালিকা (Mismatch History)</button>
+            <button id="tab-no-entry" class="flex-1 p-3 sm:p-4 font-semibold text-gray-500" onclick="switchTab('no-entry')">অপ্রবেশিত পণ্য (No Entry Products)</button>
         </nav>
 
         <!-- Main Content -->
@@ -106,7 +131,7 @@
             <!-- Loading Spinner (Initially hidden) -->
             <div id="loading-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                 <div class="spinner"></div>
-                <span class="text-white text-xl ml-4">Loading Data...</span>
+                <span class="text-white text-xl ml-4">ডাটা লোড হচ্ছে...</span>
             </div>
             
             <!-- Scan Page -->
@@ -114,58 +139,58 @@
                 <!-- Shop Selection -->
                 <div class="flex flex-col sm:flex-row gap-4">
                     <div class="flex-1">
-                        <label for="shop-select" class="block text-sm font-medium text-gray-700 mb-1">Select Shop</label>
+                        <label for="shop-select" class="block text-sm font-medium text-gray-700 mb-1">দোকান নির্বাচন করুন</label>
                         <select id="shop-select" class="w-full p-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500">
-                            <option value="">-- Select a Shop --</option>
+                            <option value="">-- একটি দোকান নির্বাচন করুন --</option>
                             <option value="Dhanmondi">Dhanmondi</option>
                             <option value="Uttara">Uttara</option>
                             <option value="Banani">Banani</option>
                         </select>
                     </div>
                     <div class="self-end mt-2 sm:mt-0">
-                        <button id="load-data-btn" class="w-full sm:w-auto bg-blue-600 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-blue-700 transition-colors">Load Data</button>
+                        <button id="load-data-btn" class="w-full sm:w-auto bg-blue-600 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-blue-700 transition-colors">ডাটা লোড করুন</button>
                     </div>
                 </div>
 
                 <!-- Live Scanner Toggle Button -->
                 <button id="toggle-scanner-btn" class="w-full bg-indigo-600 text-white px-5 py-3 rounded-lg shadow-md hover:bg-indigo-700 transition-colors flex items-center justify-center space-x-2" onclick="toggleScannerView()">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
-                    <span>Start Camera Scan</span>
+                    <span id="scanner-button-text">ক্যামেরা স্ক্যান শুরু করুন</span>
                 </button>
                 
                 <!-- Live Scanner View (Initially Hidden) -->
                 <div id="live-scanner-view" class="hidden relative border-2 border-dashed border-gray-300 rounded-lg p-2">
-                    <h4 class="text-lg font-medium text-gray-800 mb-2">Scan Barcode</h4>
+                    <h4 class="text-lg font-medium text-gray-800 mb-2">বারকোড স্ক্যান করুন</h4>
                     <div id="scanner-container" class="relative rounded-lg overflow-hidden">
                         <!-- Video element will show the camera feed -->
                         <video id="scanner-video" class="w-full h-full" playsinline></video>
                     </div>
                     <div id="scanner-result" class="mt-2 text-center text-red-600 font-bold text-lg"></div>
-                    <button id="stop-scanner-btn" class="w-full mt-4 bg-red-500 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-red-600 transition-colors" onclick="toggleScannerView()">Stop Scan</button>
+                    <button id="stop-scanner-btn" class="w-full mt-4 bg-red-500 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-red-600 transition-colors" onclick="toggleScannerView()">স্ক্যান বন্ধ করুন</button>
                 </div>
 
                 <!-- Manual Scan Input -->
                 <form id="scan-form" class="space-y-2">
-                    <label for="scan-input" class="block text-sm font-medium text-gray-700">Enter Barcode or Code</label>
-                    <input type="text" id="scan-input" placeholder="Type SKU or scan and press Enter..." class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" disabled>
+                    <label for="scan-input" class="block text-sm font-medium text-gray-700">বারকোড বা কোড লিখুন</label>
+                    <input type="text" id="scan-input" placeholder="SKU টাইপ করুন বা স্ক্যান করে Enter চাপুন..." class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" disabled>
                     <div id="scan-status" class="text-lg h-6"></div>
                 </form>
 
                 <!-- Scanned Items Table -->
                 <div class="mt-6">
-                    <h3 class="text-lg font-semibold text-gray-800 mb-2">Recently Scanned Items (Found)</h3>
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">সম্প্রতি স্ক্যান করা আইটেম (পাওয়া গেছে)</h3>
                     <div class="max-h-64 overflow-y-auto border rounded-lg shadow">
                         <table class="min-w-full divide-y divide-gray-200">
                             <thead class="bg-gray-50 sticky top-0">
                                 <tr>
-                                    <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
-                                    <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance QTY</th>
-                                    <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Scanned Qty</th>
+                                    <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">পণ্যর নাম</th>
+                                    <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ব্যালেন্স QTY</th>
+                                    <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">স্ক্যান করা QTY</th>
                                 </tr>
                             </thead>
                             <tbody id="scan-log-body" class="bg-white divide-y divide-gray-200">
                                 <tr id="scan-log-placeholder">
-                                    <td colspan="3" class="p-3 text-center text-gray-500">No items have been scanned yet.</td>
+                                    <td colspan="3" class="p-3 text-center text-gray-500">এখনও কোনো আইটেম স্ক্যান করা হয়নি।</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -176,30 +201,30 @@
             <!-- Mismatching History Page -->
             <div id="page-history" class="hidden space-y-6">
                 <div class="flex justify-between items-center flex-wrap gap-3">
-                    <h2 class="text-xl sm:text-2xl font-semibold text-gray-800">Mismatch Report</h2>
-                    <button id="download-csv-btn" class="bg-green-600 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-green-700 transition-colors">Download CSV</button>
+                    <h2 class="text-xl sm:text-2xl font-semibold text-gray-800">অমিল রিপোর্ট</h2>
+                    <button id="download-csv-btn" class="bg-green-600 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-green-700 transition-colors">CSV ডাউনলোড করুন</button>
                 </div>
                 <!-- Filters -->
                 <div class="flex gap-4 flex-wrap">
                     <label class="flex items-center space-x-2">
                         <input type="checkbox" id="filter-mismatch" class="rounded text-blue-600 focus:ring-blue-500" checked onchange="renderHistoryTable()">
-                        <span class="text-gray-700">Show Mismatches Only</span>
+                        <span class="text-gray-700">শুধুমাত্র অমিল দেখান</span>
                     </label>
                     <label class="flex items-center space-x-2">
                         <input type="checkbox" id="filter-scanned" class="rounded text-blue-600 focus:ring-blue-500" onchange="renderHistoryTable()">
-                        <span class="text-gray-700">Show Scanned Items Only</span>
+                        <span class="text-gray-700">শুধুমাত্র স্ক্যান করা আইটেম দেখান</span>
                     </label>
                 </div>
                 <div class="overflow-x-auto border rounded-lg shadow">
                     <table id="mismatch-table" class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
-                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Barcode</th>
-                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
-                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance QTY</th>
-                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Scanned Qty</th>
-                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">কোড</th>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">বারকোড</th>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">পণ্যর নাম</th>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ব্যালেন্স QTY</th>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">স্ক্যান করা QTY</th>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">স্ট্যাটাস</th>
                             </tr>
                         </thead>
                         <tbody id="mismatch-table-body" class="bg-white divide-y divide-gray-200">
@@ -211,22 +236,22 @@
             <!-- No Entry Product Page (Updated with Download Button) -->
             <div id="page-no-entry" class="hidden space-y-6">
                 <div class="flex justify-between items-center flex-wrap gap-3">
-                    <h2 class="text-xl sm:text-2xl font-semibold text-gray-800">"No Entry" Products (Not in Master List)</h2>
-                    <!-- NEW: Download Button for No Entry Products -->
-                    <button id="download-no-entry-csv-btn" class="bg-orange-600 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-orange-700 transition-colors" onclick="downloadNoEntryCSV()">Download Excel</button>
+                    <h2 class="text-xl sm:text-2xl font-semibold text-gray-800">"অপ্রবেশিত" পণ্য (মাস্টার লিস্টে নেই)</h2>
+                    <!-- Download Button for No Entry Products -->
+                    <button id="download-no-entry-csv-btn" class="bg-orange-600 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-orange-700 transition-colors" onclick="downloadNoEntryCSV()">এক্সেল ডাউনলোড করুন</button>
                 </div>
 
                 <div class="overflow-x-auto border rounded-lg shadow">
                     <table id="no-entry-table" class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU (Scanned)</th>
-                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty (Scanned Quantity)</th>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU (স্ক্যান করা হয়েছে)</th>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">QTY (স্ক্যান করা পরিমাণ)</th>
                             </tr>
                         </thead>
                         <tbody id="no-entry-table-body" class="bg-white divide-y divide-gray-200">
                             <tr id="no-entry-placeholder">
-                                <td colspan="2" class="p-3 text-center text-gray-500">No "No Entry" items have been scanned yet.</td>
+                                <td colspan="2" class="p-3 text-center text-gray-500">এখনও কোনো "অপ্রবেশিত" আইটেম স্ক্যান করা হয়নি।</td>
                             </tr>
                         </tbody>
                     </table>
@@ -248,6 +273,7 @@
         let notFoundScanCounts = new Map(); // For "No Entry" items
         let fullReport = [];
         let codeReader = null; // ZXing Code Reader instance
+        let isProcessingScan = false; // NEW: Lock to prevent re-scanning same barcode immediately
 
         // --- DOM Elements ---
         const scanInput = document.getElementById('scan-input');
@@ -270,6 +296,9 @@
         const scannerVideo = document.getElementById('scanner-video');
         const scannerResult = document.getElementById('scanner-result');
         const toggleScannerBtn = document.getElementById('toggle-scanner-btn');
+        const scannerButtonText = document.getElementById('scanner-button-text');
+        const scannerContainer = document.getElementById('scanner-container');
+
 
         // --- PWA Initialization ---
         function initializePWA() {
@@ -298,16 +327,9 @@
             const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(manifestJSON);
             document.getElementById('pwa-manifest').setAttribute('href', dataUri);
             
-            // 2. REGISTER SERVICE WORKER (Cannot implement full offline caching in one file, 
-            //    but registration is sometimes needed for A2HS detection).
+            // 2. REGISTER SERVICE WORKER (No-op registration for single file constraint)
             if ('serviceWorker' in navigator) {
-                // Use a minimal, in-memory worker (not truly useful for caching, but satisfies requirement)
-                // Note: The browser *may* still complain or fail to install without a proper external sw.js file 
-                // that handles the fetch event, but this is the best we can do in a single file.
-                // For a real-world app, you must host a separate sw.js file.
-                
-                // We'll use a no-op registration
-                navigator.serviceWorker.register('./sw-noop.js') // This will fail as sw-noop.js doesn't exist, but the intent is shown.
+                navigator.serviceWorker.register('./sw-noop.js') 
                     .then(reg => console.log('Service Worker registration attempted (Note: requires external sw.js)'))
                     .catch(err => console.log('Service Worker registration failed:', err));
             }
@@ -323,12 +345,13 @@
             
             // Initialize ZXing Code Reader
             if (typeof ZXing !== 'undefined' && typeof ZXing.BrowserMultiFormatReader === 'function') {
-                codeReader = new ZXing.BrowserMultiFormatReader();
+                // IMPORTANT: Use BrowserMultiFormatReader which is robust for various devices
+                codeReader = new ZXing.BrowserMultiFormatReader(); 
                 console.log('ZXing Code Reader initialized.');
             } else {
                 console.warn('ZXing library not loaded or initialized correctly. Live scanning disabled.');
                 toggleScannerBtn.disabled = true;
-                toggleScannerBtn.textContent = 'Camera Scan Unavailable';
+                scannerButtonText.textContent = 'ক্যামেরা স্ক্যান অনুপলব্ধ'; // Camera Scan Unavailable
                 toggleScannerBtn.classList.replace('bg-indigo-600', 'bg-gray-400');
             }
         });
@@ -371,7 +394,7 @@
             }
         }
 
-        // --- Live Scanner Logic ---
+        // --- Live Scanner Logic (UPDATED for speed) ---
 
         /**
          * Toggles the live scanner view and starts/stops the camera.
@@ -381,75 +404,70 @@
 
             if (liveScannerView.classList.contains('hidden')) {
                 // Show scanner view
+                if (shopSelect.value === '') {
+                    showTemporaryMessage('দোকান নির্বাচন করে ডাটা লোড করুন!', 'red'); // Select a shop and load data first!
+                    return;
+                }
+                
                 liveScannerView.classList.remove('hidden');
-                toggleScannerBtn.textContent = 'Use Manual Input';
+                scannerButtonText.textContent = 'ম্যানুয়াল ইনপুট ব্যবহার করুন'; // Use Manual Input
                 toggleScannerBtn.classList.replace('bg-indigo-600', 'bg-yellow-600');
                 startScanner();
             } else {
                 // Hide scanner view
                 liveScannerView.classList.add('hidden');
-                toggleScannerBtn.textContent = 'Start Camera Scan';
+                scannerButtonText.textContent = 'ক্যামেরা স্ক্যান শুরু করুন'; // Start Camera Scan
                 toggleScannerBtn.classList.replace('bg-yellow-600', 'bg-indigo-600');
                 stopScanner();
             }
         }
 
         /**
-         * Starts the video stream and barcode decoding process.
+         * Starts the video stream and barcode decoding process. (Optimized for continuous scan)
          */
         async function startScanner() {
-            if (!codeReader || shopSelect.value === '') {
-                showTemporaryMessage('Select a shop and load data first!', 'red');
-                return;
-            }
+            if (!codeReader) return;
             
-            scannerResult.textContent = 'Starting camera...';
+            isProcessingScan = false; // Reset lock
+            scannerResult.textContent = 'ক্যামেরা চালু হচ্ছে...'; // Starting camera...
             scanInput.disabled = true; // Disable manual input while scanning
 
             try {
-                // FIX: Changed facingMode constraint to be less strict for better device compatibility.
-                // Request environment (back) camera and start decoding
-                codeReader.decodeFromConstraints({ video: { facingMode: "environment" } }, scannerVideo, (result, err) => {
-                    if (result) {
-                        const scannedSku = result.text.trim().toUpperCase();
-                        scannerResult.textContent = `Scanned: ${scannedSku}`;
-                        
-                        // FIX: Only reset the code reader, do NOT call stopScanner() here.
-                        // This prevents scanInput.disabled from being prematurely set to false.
-                        codeReader.reset(); 
-                        
-                        // Automatically process the scan result
-                        processScannedData(scannedSku);
-                        
-                        // Restart scanner after a short delay (e.g., 2 seconds) to avoid immediate re-scan
-                        setTimeout(() => {
-                            // Check if the scanner view is still active before restarting
-                            if (!liveScannerView.classList.contains('hidden')) {
-                                startScanner();
-                            }
-                        }, 2000); 
+                // Request environment (back) camera
+                const constraints = {
+                    video: { facingMode: "environment" }
+                };
 
+                // Use decodeFromConstraints, but rely on the `isProcessingScan` lock 
+                // for rapid, continuous scanning instead of resetting the stream immediately.
+                codeReader.decodeFromConstraints(constraints, scannerVideo, (result, err) => {
+                    if (result && !isProcessingScan) {
+                        isProcessingScan = true; // Lock the scanner
+                        const scannedSku = result.text.trim().toUpperCase();
+                        
+                        // Handle the success visually, audibly, and logically
+                        handleScanSuccess(scannedSku);
                     }
-                    if (err && !(err instanceof ZXing.NotFoundException)) {
+                    if (err && !(err instanceof ZXing.NotFoundException || err.name === 'NotStreamReadyException')) {
                         console.error(err);
-                        scannerResult.textContent = 'Scanning Error';
-                        if (err.name !== 'NotFoundError') {
-                            showTemporaryMessage('Scanning Issue: ' + err.message, 'red');
+                        scannerResult.textContent = 'স্ক্যানিং ত্রুটি: ' + (err.message || 'অজানা ত্রুটি'); // Scanning Error
+                        if (err.name === 'NotAllowedError') {
+                             showTemporaryMessage('ক্যামেরা অ্যাক্সেস করতে অনুমতি দিন।', 'red'); // Grant permission to access the camera.
                         }
                     }
                 });
+                
                 console.log('Camera started. Decoding...');
-                scannerResult.textContent = 'Hold barcode up to the camera...';
+                scannerResult.textContent = 'ক্যামেরার সামনে বারকোড ধরুন...'; // Hold barcode up to the camera...
 
             } catch (error) {
                 console.error('Failed to start scanner:', error);
-                scannerResult.textContent = 'Camera Error: ' + error.message;
-                showTemporaryMessage('Failed to start camera. Please use manual input.', 'red');
-                codeReader.reset();
+                scannerResult.textContent = 'ক্যামেরা ত্রুটি: ' + error.message; // Camera Error
+                showTemporaryMessage('ক্যামেরা চালু করা যায়নি। অনুগ্রহ করে ম্যানুয়াল ইনপুট ব্যবহার করুন।', 'red'); // Failed to start camera. Please use manual input.
+                stopScanner(); // Stop/reset everything
                 liveScannerView.classList.add('hidden');
-                toggleScannerBtn.textContent = 'Start Camera Scan';
+                scannerButtonText.textContent = 'ক্যামেরা স্ক্যান শুরু করুন';
                 toggleScannerBtn.classList.replace('bg-yellow-600', 'bg-indigo-600');
-                scanInput.disabled = false;
             }
         }
 
@@ -460,10 +478,36 @@
             if (codeReader) {
                 codeReader.reset();
                 scannerResult.textContent = '';
+                isProcessingScan = false; // Ensure lock is released
                 // Only enable manual input when the user explicitly stops the scanner
                 scanInput.disabled = false; 
             }
         }
+        
+        /**
+         * NEW: Handles visual, audio feedback, and auto-ready for next scan.
+         */
+        function handleScanSuccess(scannedSku) {
+            // 1. Visual/Audio Feedback
+            scannerResult.textContent = `স্ক্যান করা হয়েছে: ${scannedSku}`; // Scanned: [SKU]
+            
+            // Add green pulse border/effect
+            scannerContainer.classList.add('scan-success-pulse');
+            
+            // 2. Data Processing (This calls playBeep inside)
+            processScannedData(scannedSku);
+
+            // 3. Auto-Ready for next scan (Unlock after a cool-down)
+            setTimeout(() => {
+                scannerContainer.classList.remove('scan-success-pulse'); // Remove visual feedback
+                isProcessingScan = false; // Unlock the scanner for the next item
+                if (!liveScannerView.classList.contains('hidden')) {
+                    // Only reset message if scanner is still active
+                    scannerResult.textContent = 'স্ক্যান সফল! পরেরটির জন্য প্রস্তুত...'; // Scan Success! Ready for next.
+                }
+            }, 1000); // 1.0 seconds cool-down before next scan (can be adjusted)
+        }
+
 
         // --- Core Functions (Load, Scan, Report) ---
 
@@ -482,10 +526,10 @@
                 scanCounts.set(itemCode, newCount);
                 updateScanLog(item, newCount);
                 
-                scanStatus.textContent = `Scanned (${newCount}): ${item.itemName}`;
+                scanStatus.textContent = `স্ক্যান করা হয়েছে (${newCount}): ${item.itemName}`;
                 scanStatus.classList.remove('text-red-600', 'text-yellow-500');
                 scanStatus.classList.add('text-green-600');
-                playBeep(false);
+                playBeep(false); // Success Beep
 
                 // 2. Asynchronously save to Google Sheet (Found Logic)
                 try {
@@ -511,7 +555,7 @@
                     }
                 } catch (error) {
                     console.error('Save error (Found):', error);
-                    scanStatus.textContent = `Scanned (${newCount})... Save Failed!`;
+                    scanStatus.textContent = `স্ক্যান করা হয়েছে (${newCount})... সেভ ব্যর্থ!`; // ... Save Failed!
                     scanStatus.classList.remove('text-green-600');
                     scanStatus.classList.add('text-yellow-500');
                 }
@@ -524,10 +568,10 @@
                 notFoundScanCounts.set(sku, newCount);
                 renderNoEntryTable(); // Refresh the no entry table
 
-                scanStatus.textContent = `Item Not Found. Added to "No Entry" list: ${sku}`;
+                scanStatus.textContent = `আইটেমটি পাওয়া যায়নি। "অপ্রবেশিত" তালিকায় যুক্ত হয়েছে: ${sku}`; // Item Not Found. Added to "No Entry" list:
                 scanStatus.classList.remove('text-green-600', 'text-yellow-500');
                 scanStatus.classList.add('text-red-600');
-                playBeep(true); 
+                playBeep(true); // Error Beep
 
                 // 2. Asynchronously save to Google Sheet (Not Found Logic)
                 try {
@@ -552,7 +596,7 @@
                     }
                 } catch (error) {
                     console.error('Save error (Not Found):', error);
-                    scanStatus.textContent = `No Entry Item Save Failed!`;
+                    scanStatus.textContent = `অপ্রবেশিত আইটেম সেভ ব্যর্থ!`; // No Entry Item Save Failed!
                     scanStatus.classList.remove('text-red-600');
                     scanStatus.classList.add('text-yellow-500');
                 }
@@ -580,6 +624,7 @@
                 loadBtn.disabled = true;
                 toggleScannerBtn.disabled = true;
                 scanInput.disabled = true;
+                if(codeReader) stopScanner(); // Stop scanner during load
             } else {
                 loadingOverlay.classList.add('hidden');
                 loadBtn.disabled = false;
@@ -595,7 +640,7 @@
         async function loadData() {
             const sheetName = shopSelect.value;
             if (!sheetName) {
-                showTemporaryMessage('Please select a shop!', 'red');
+                showTemporaryMessage('দয়া করে একটি দোকান নির্বাচন করুন!', 'red'); // Please select a shop!
                 return;
             }
             
@@ -612,7 +657,7 @@
             mismatchTableBody.innerHTML = ''; 
             noEntryTableBody.innerHTML = ''; 
             noEntryTableBody.appendChild(noEntryPlaceholder);
-            scanStatus.textContent = 'Loading Master Data...';
+            scanStatus.textContent = 'মাস্টার ডাটা লোড হচ্ছে...'; // Loading Master Data...
             scanStatus.classList.remove('text-red-600', 'text-yellow-500', 'text-green-600');
 
             try {
@@ -622,7 +667,7 @@
                 const masterData = await masterResponse.json();
                 if (masterData.error) throw new Error(masterData.error);
                 
-                scanStatus.textContent = 'Loading Scan Data...';
+                scanStatus.textContent = 'স্ক্যান ডাটা লোড হচ্ছে...'; // Loading Scan Data...
 
                 // Step 2: Fetch Existing Scan Data
                 const scanSheetName = `${sheetName} Scan`;
@@ -691,7 +736,7 @@
             // 5. Finish setup
             showLoading(false);
             scanInput.disabled = false;
-            scanStatus.textContent = `${inventoryMap.size} items from ${shopSelect.value} are ready for scanning.`;
+            scanStatus.textContent = `${inventoryMap.size} টি আইটেম ${shopSelect.value} এর জন্য স্ক্যান করার জন্য প্রস্তুত।`; // ... items from ... are ready for scanning.
             scanStatus.classList.remove('text-red-600', 'text-yellow-500');
             scanStatus.classList.add('text-green-600');
             scanInput.focus();
@@ -700,7 +745,7 @@
         function onDataError(error) {
             showLoading(false);
             scanInput.disabled = true;
-            scanStatus.textContent = `Error loading data: ${error.message}`;
+            scanStatus.textContent = `ডাটা লোড করার সময় ত্রুটি: ${error.message}`; // Error loading data:
             scanStatus.classList.add('text-red-600');
             scanStatus.classList.remove('text-green-600', 'text-yellow-500');
         }
@@ -737,7 +782,7 @@
                 let statusColor = 'text-gray-700';
 
                 if (diff === 0) {
-                    status = (scanned > 0) ? 'OK' : 'Not Scanned';
+                    status = (scanned > 0) ? 'ঠিক আছে (OK)' : 'স্ক্যান করা হয়নি';
                     if (scanned > 0) statusColor = 'text-green-600 font-semibold';
                 } else if (diff > 0) {
                     status = `+${diff}`;
@@ -781,7 +826,7 @@
             }
 
             if (filteredReport.length === 0) {
-                mismatchTableBody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">No items match the current filters.</td></tr>`;
+                mismatchTableBody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">বর্তমান ফিল্টারের সাথে কোনো আইটেম মেলে না।</td></tr>`; // No items match the current filters.
                 return;
             }
 
@@ -889,7 +934,7 @@
          */
         function downloadNoEntryCSV() {
             if (notFoundScanCounts.size === 0) {
-                showTemporaryMessage('No "No Entry" data to download.', 'blue');
+                showTemporaryMessage('ডাউনলোড করার জন্য "অপ্রবেশিত" কোনো ডাটা নেই।', 'blue'); // No "No Entry" data to download.
                 return;
             }
             
@@ -913,7 +958,7 @@
             link.click();
             document.body.removeChild(link);
             
-            showTemporaryMessage('No Entry Products data download complete.', 'green');
+            showTemporaryMessage('অপ্রবেশিত পণ্য ডাটা ডাউনলোড সম্পন্ন হয়েছে।', 'green'); // No Entry Products data download complete.
         }
 
 
@@ -927,12 +972,14 @@
                 gain.connect(audioContext.destination);
 
                 if (isError) {
+                    // Lower frequency square wave for error sound
                     oscillator.type = 'square';
-                    oscillator.frequency.setValueAtTime(110, audioContext.currentTime);
+                    oscillator.frequency.setValueAtTime(220, audioContext.currentTime);
                     gain.gain.setValueAtTime(0.3, audioContext.currentTime);
                 } else {
+                    // Higher frequency sine wave for success sound
                     oscillator.type = 'sine';
-                    oscillator.frequency.setValueAtTime(880, audioContext.currentTime); 
+                    oscillator.frequency.setValueAtTime(1200, audioContext.currentTime); 
                     gain.gain.setValueAtTime(0.2, audioContext.currentTime);
                 }
 
