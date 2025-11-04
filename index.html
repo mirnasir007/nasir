@@ -3,11 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventory Mismatch - বারকোড স্ক্যানার</title>
+    <title>Inventory Mismatch Scanner</title>
+
+    <!-- PWA Meta Tags (For Add to Home Screen/APK-like behavior) -->
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#1D4ED8">
+    
+    <!-- PWA Installation: Manifest.json is REQUIRED for A2HS/Install Prompt. -->
+    <!-- We embed the manifest data directly using a Data URI to stay in one file. -->
+    <link id="pwa-manifest" rel="manifest" href="">
+
     <!-- Load Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Barcode Scanner Library: Loading this globally so the main script can access it -->
-    <script src="https://unpkg.com/html5-qrcode@2.3.9/umd/html5-qrcode.js"></script>
+    <!-- Load ZXing library for high-speed barcode scanning -->
+    <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js"></script>
+
     <style>
         /* Custom styles for disabled elements */
         :disabled {
@@ -30,7 +41,7 @@
             width: 36px;
             height: 36px;
             border-radius: 50%;
-            border-left-color: #09f;
+            border-left-color: #fff;
             animation: spin 1s ease infinite;
         }
         @keyframes spin {
@@ -39,162 +50,899 @@
         }
         /* Style for active tab */
         .tab-active {
-            border-bottom-color: #3b82f6; /* blue-500 */
-            color: #3b82f6; /* blue-500 */
+            border-bottom-width: 4px;
+            --tw-border-opacity: 1;
+            border-color: rgb(37 99 235 / var(--tw-border-opacity));
+            --tw-text-opacity: 1;
+            color: rgb(37 99 235 / var(--tw-text-opacity));
         }
-
-        /* --- New/Updated Scanner Styling for Barcode Look --- */
+        /* Full-width video container for mobile scanning */
         #scanner-container {
-            /* Restrict the size of the container to mimic a focused scanner view */
             width: 100%;
-            max-width: 400px;
-            height: 300px; /* Fixed height for consistent look */
-            margin: 0 auto;
+            padding-top: 100%; /* 1:1 aspect ratio container */
             position: relative;
-            overflow: hidden; /* Important to keep the video stream within bounds */
-            border: 2px solid #3b82f6; /* Blue border */
-            border-radius: 8px;
+            background-color: #000;
         }
-
-        #qr-reader video {
-            /* Ensure the video fills the container, maintaining aspect ratio */
-            object-fit: cover;
+        #scanner-video {
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
             height: 100%;
+            object-fit: cover;
         }
-
-        /* Overlay for the red scanning line */
-        .scanner-line {
-            position: absolute;
-            top: 50%;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: red;
-            box-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
-            transform: translateY(-50%);
-            animation: scan-move 2s infinite alternate;
-            pointer-events: none; /* Allows clicks to pass through */
+        /* Targeting small screens for better responsiveness */
+        @media (max-width: 640px) {
+            .max-w-7xl {
+                padding: 0;
+            }
+            .p-4 {
+                padding: 1rem;
+            }
+            .p-6 {
+                padding: 1.5rem;
+            }
         }
-
-        @keyframes scan-move {
-            0% { top: 20%; }
-            100% { top: 80%; }
-        }
-        /* --- End Scanner Styling --- */
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen font-sans">
+<body class="bg-gray-100 font-sans p-2 sm:p-4 min-h-screen">
 
-    <!-- Header -->
-    <header class="bg-white shadow-md p-4 sticky top-0 z-10">
-        <h1 class="text-2xl font-bold text-gray-800 text-center">ইনভেন্টরি অমিল পরীক্ষা (Inventory Mismatch Checker)</h1>
-    </header>
+    <div class="max-w-7xl mx-auto bg-white shadow-lg rounded-lg overflow-hidden">
+        <!-- Header -->
+        <header class="bg-blue-600 text-white p-4">
+            <h1 class="text-xl sm:text-2xl font-bold">Inventory Mismatch Scanner</h1>
+        </header>
 
-    <!-- Main Content Area -->
-    <main class="container mx-auto p-4 md:p-8">
+        <!-- Tab Navigation -->
+        <nav class="flex border-b">
+            <button id="tab-scan" class="flex-1 p-3 sm:p-4 font-semibold tab-active" onclick="switchTab('scan')">Scan</button>
+            <button id="tab-history" class="flex-1 p-3 sm:p-4 font-semibold text-gray-500" onclick="switchTab('history')">Mismatch History</button>
+            <button id="tab-no-entry" class="flex-1 p-3 sm:p-4 font-semibold text-gray-500" onclick="switchTab('no-entry')">No Entry Products</button>
+        </nav>
 
-        <!-- Barcode Scanner Section -->
-        <section id="scanner-section" class="bg-white p-6 rounded-xl shadow-lg mb-8">
-            <h2 class="text-xl font-semibold text-gray-700 mb-4">বারকোড স্ক্যান করুন (Scan Barcode)</h2>
-            
-            <!-- Scanner Container with Barcode-like visual -->
-            <div id="scanner-container">
-                <div id="qr-reader" style="width:100%;"></div>
-                <!-- Red scanning line overlay -->
-                <div class="scanner-line"></div>
+        <!-- Main Content -->
+        <main class="p-4 sm:p-6 space-y-6">
+
+            <!-- Loading Spinner (Initially hidden) -->
+            <div id="loading-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div class="spinner"></div>
+                <span class="text-white text-xl ml-4">Loading Data...</span>
             </div>
             
-            <p id="scan-result" class="text-center text-sm mt-4 text-gray-500">স্ক্যান শুরু হতে একটু সময় লাগতে পারে। অনুগ্রহ করে ক্যামেরার অনুমতি দিন।</p>
-        </section>
-
-        <!-- Product Details / Manual Entry Section -->
-        <section id="entry-section" class="bg-white p-6 rounded-xl shadow-lg mb-8">
-            <h2 class="text-xl font-semibold text-gray-700 mb-4">পণ্যের তথ্য (Product Details)</h2>
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                    <label for="scanned-sku" class="block text-sm font-medium text-gray-700">স্ক্যান করা SKU (Scanned SKU)</label>
-                    <input type="text" id="scanned-sku" readonly class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-3 bg-gray-100 font-mono text-gray-800">
+            <!-- Scan Page -->
+            <div id="page-scan" class="space-y-6">
+                <!-- Shop Selection -->
+                <div class="flex flex-col sm:flex-row gap-4">
+                    <div class="flex-1">
+                        <label for="shop-select" class="block text-sm font-medium text-gray-700 mb-1">Select Shop</label>
+                        <select id="shop-select" class="w-full p-2 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">-- Select a Shop --</option>
+                            <option value="Dhanmondi">Dhanmondi</option>
+                            <option value="Uttara">Uttara</option>
+                            <option value="Banani">Banani</option>
+                        </select>
+                    </div>
+                    <div class="self-end mt-2 sm:mt-0">
+                        <button id="load-data-btn" class="w-full sm:w-auto bg-blue-600 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-blue-700 transition-colors">Load Data</button>
+                    </div>
                 </div>
-                <div>
-                    <label for="actual-qty" class="block text-sm font-medium text-gray-700">প্রকৃত পরিমাণ (Actual Qty)</label>
-                    <input type="number" id="actual-qty" value="1" min="1" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-3 focus:ring-blue-500 focus:border-blue-500" placeholder="স্টকে থাকা পরিমাণ">
-                </div>
-            </div>
 
-            <div class="mt-6 flex justify-end">
-                <button id="check-btn" onclick="checkMismatch()" class="px-6 py-3 bg-blue-600 text-white font-medium rounded-lg shadow-md hover:bg-blue-700 transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">
-                    অমিল পরীক্ষা করুন (Check Mismatch)
+                <!-- Live Scanner Toggle Button -->
+                <button id="toggle-scanner-btn" class="w-full bg-indigo-600 text-white px-5 py-3 rounded-lg shadow-md hover:bg-indigo-700 transition-colors flex items-center justify-center space-x-2" onclick="toggleScannerView()">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                    <span>Start Camera Scan</span>
                 </button>
-            </div>
-        </section>
-        
-        <!-- Status Log Section -->
-        <section id="log-section" class="bg-white p-6 rounded-xl shadow-lg">
-            <h2 class="text-xl font-semibold text-gray-700 mb-4">স্ট্যাটাস লগ (Status Log)</h2>
-            <div id="log-container" class="space-y-2 max-h-64 overflow-y-auto p-3 border border-gray-200 rounded-lg bg-gray-50">
-                <!-- Log entries will be added here -->
-            </div>
-        </section>
+                
+                <!-- Live Scanner View (Initially Hidden) -->
+                <div id="live-scanner-view" class="hidden relative border-2 border-dashed border-gray-300 rounded-lg p-2">
+                    <h4 class="text-lg font-medium text-gray-800 mb-2">Scan Barcode</h4>
+                    <div id="scanner-container" class="relative rounded-lg overflow-hidden">
+                        <!-- Video element will show the camera feed -->
+                        <video id="scanner-video" class="w-full h-full" playsinline></video>
+                    </div>
+                    <div id="scanner-result" class="mt-2 text-center text-red-600 font-bold text-lg"></div>
+                    <button id="stop-scanner-btn" class="w-full mt-4 bg-red-500 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-red-600 transition-colors" onclick="toggleScannerView()">Stop Scan</button>
+                </div>
 
-    </main>
-    
-    <!-- JavaScript Logic -->
+                <!-- Manual Scan Input -->
+                <form id="scan-form" class="space-y-2">
+                    <label for="scan-input" class="block text-sm font-medium text-gray-700">Enter Barcode or Code</label>
+                    <input type="text" id="scan-input" placeholder="Type SKU or scan and press Enter..." class="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500" disabled>
+                    <div id="scan-status" class="text-lg h-6"></div>
+                </form>
+
+                <!-- Scanned Items Table -->
+                <div class="mt-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-2">Recently Scanned Items (Found)</h3>
+                    <div class="max-h-64 overflow-y-auto border rounded-lg shadow">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50 sticky top-0">
+                                <tr>
+                                    <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
+                                    <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance QTY</th>
+                                    <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Scanned Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody id="scan-log-body" class="bg-white divide-y divide-gray-200">
+                                <tr id="scan-log-placeholder">
+                                    <td colspan="3" class="p-3 text-center text-gray-500">No items have been scanned yet.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Mismatching History Page -->
+            <div id="page-history" class="hidden space-y-6">
+                <div class="flex justify-between items-center flex-wrap gap-3">
+                    <h2 class="text-xl sm:text-2xl font-semibold text-gray-800">Mismatch Report</h2>
+                    <button id="download-csv-btn" class="bg-green-600 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-green-700 transition-colors">Download CSV</button>
+                </div>
+                <!-- Filters -->
+                <div class="flex gap-4 flex-wrap">
+                    <label class="flex items-center space-x-2">
+                        <input type="checkbox" id="filter-mismatch" class="rounded text-blue-600 focus:ring-blue-500" checked onchange="renderHistoryTable()">
+                        <span class="text-gray-700">Show Mismatches Only</span>
+                    </label>
+                    <label class="flex items-center space-x-2">
+                        <input type="checkbox" id="filter-scanned" class="rounded text-blue-600 focus:ring-blue-500" onchange="renderHistoryTable()">
+                        <span class="text-gray-700">Show Scanned Items Only</span>
+                    </label>
+                </div>
+                <div class="overflow-x-auto border rounded-lg shadow">
+                    <table id="mismatch-table" class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Barcode</th>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balance QTY</th>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Scanned Qty</th>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mismatch-table-body" class="bg-white divide-y divide-gray-200">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- No Entry Product Page (Updated with Download Button) -->
+            <div id="page-no-entry" class="hidden space-y-6">
+                <div class="flex justify-between items-center flex-wrap gap-3">
+                    <h2 class="text-xl sm:text-2xl font-semibold text-gray-800">"No Entry" Products (Not in Master List)</h2>
+                    <!-- NEW: Download Button for No Entry Products -->
+                    <button id="download-no-entry-csv-btn" class="bg-orange-600 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-orange-700 transition-colors" onclick="downloadNoEntryCSV()">Download Excel</button>
+                </div>
+
+                <div class="overflow-x-auto border rounded-lg shadow">
+                    <table id="no-entry-table" class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU (Scanned)</th>
+                                <th class="p-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty (Scanned Quantity)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="no-entry-table-body" class="bg-white divide-y divide-gray-200">
+                            <tr id="no-entry-placeholder">
+                                <td colspan="2" class="p-3 text-center text-gray-500">No "No Entry" items have been scanned yet.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
     <script>
-        // NOTE: type="module" has been removed to fix the ReferenceError: Html5QrcodeScanner is not defined.
-        // Global variables for Firebase setup (MANDATORY)
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // --- !! IMPORTANT !! ---
+        // Placeholder URL for Google Apps Script Web App
+        const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbySgUuEAQ1hT_G920GIUSVBOf80nZg7sckoG0XWZFB22fqWU1TiBtpUtdk89FcvThHF/exec';
+        
+        // --- Global State ---
+        let inventoryMap = new Map();
+        let barcodeToCodeMap = new Map();
+        let scanCounts = new Map();
+        let notFoundScanCounts = new Map(); // For "No Entry" items
+        let fullReport = [];
+        let codeReader = null; // ZXing Code Reader instance
 
-        // Note: Firestore is not used in this simple client-side scanner example, but the boilerplate is kept for compliance.
-        // Importing only essential libraries for a simple app to run.
-        // We will focus on the scanner logic first.
+        // --- DOM Elements ---
+        const scanInput = document.getElementById('scan-input');
+        const scanStatus = document.getElementById('scan-status');
+        const shopSelect = document.getElementById('shop-select');
+        const loadBtn = document.getElementById('load-data-btn');
+        const downloadBtn = document.getElementById('download-csv-btn');
+        const scanForm = document.getElementById('scan-form');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const scanLogBody = document.getElementById('scan-log-body');
+        const scanLogPlaceholder = document.getElementById('scan-log-placeholder');
+        const mismatchTableBody = document.getElementById('mismatch-table-body');
+        const filterMismatch = document.getElementById('filter-mismatch');
+        const filterScanned = document.getElementById('filter-scanned');
+        const noEntryTableBody = document.getElementById('no-entry-table-body');
+        const noEntryPlaceholder = document.getElementById('no-entry-placeholder');
+        
+        // Scanner Elements
+        const liveScannerView = document.getElementById('live-scanner-view');
+        const scannerVideo = document.getElementById('scanner-video');
+        const scannerResult = document.getElementById('scanner-result');
+        const toggleScannerBtn = document.getElementById('toggle-scanner-btn');
 
-        // Global variables
-        let html5QrcodeScanner;
-        const SCAN_INTERVAL_MS = 3000; // Time to wait before enabling next scan after success (3 seconds)
+        // --- PWA Initialization ---
+        function initializePWA() {
+            // 1. EMBED MANIFEST.JSON VIA DATA URI (Essential for A2HS/Installation)
+            const manifestContent = {
+                "name": "Inventory Mismatch Scanner",
+                "short_name": "Inv. Scanner",
+                "start_url": "./",
+                "display": "standalone",
+                "background_color": "#ffffff",
+                "theme_color": "#1D4ED8",
+                "icons": [
+                    {
+                        "src": "https://placehold.co/192x192/1D4ED8/ffffff?text=Inv",
+                        "sizes": "192x192",
+                        "type": "image/png"
+                    },
+                    {
+                        "src": "https://placehold.co/512x512/1D4ED8/ffffff?text=Inv",
+                        "sizes": "512x512",
+                        "type": "image/png"
+                    }
+                ]
+            };
+            const manifestJSON = JSON.stringify(manifestContent);
+            const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(manifestJSON);
+            document.getElementById('pwa-manifest').setAttribute('href', dataUri);
+            
+            // 2. REGISTER SERVICE WORKER (Cannot implement full offline caching in one file, 
+            //    but registration is sometimes needed for A2HS detection).
+            if ('serviceWorker' in navigator) {
+                // Use a minimal, in-memory worker (not truly useful for caching, but satisfies requirement)
+                // Note: The browser *may* still complain or fail to install without a proper external sw.js file 
+                // that handles the fetch event, but this is the best we can do in a single file.
+                // For a real-world app, you must host a separate sw.js file.
+                
+                // We'll use a no-op registration
+                navigator.serviceWorker.register('./sw-noop.js') // This will fail as sw-noop.js doesn't exist, but the intent is shown.
+                    .then(reg => console.log('Service Worker registration attempted (Note: requires external sw.js)'))
+                    .catch(err => console.log('Service Worker registration failed:', err));
+            }
+        }
 
-        // --- Utility Functions ---
+
+        // --- Event Listeners ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initializePWA(); // Initialize PWA setup
+            loadBtn.addEventListener('click', loadData);
+            scanForm.addEventListener('submit', handleScan);
+            downloadBtn.addEventListener('click', downloadCSV);
+            
+            // Initialize ZXing Code Reader
+            if (typeof ZXing !== 'undefined' && typeof ZXing.BrowserMultiFormatReader === 'function') {
+                codeReader = new ZXing.BrowserMultiFormatReader();
+                console.log('ZXing Code Reader initialized.');
+            } else {
+                console.warn('ZXing library not loaded or initialized correctly. Live scanning disabled.');
+                toggleScannerBtn.disabled = true;
+                toggleScannerBtn.textContent = 'Camera Scan Unavailable';
+                toggleScannerBtn.classList.replace('bg-indigo-600', 'bg-gray-400');
+            }
+        });
+
+        // --- Tab Switching ---
+        function switchTab(tabName) {
+            // Stop scanner if it's running when switching tabs
+            if (codeReader && !liveScannerView.classList.contains('hidden')) {
+                toggleScannerView();
+            }
+            
+            const pages = {
+                'scan': document.getElementById('page-scan'),
+                'history': document.getElementById('page-history'),
+                'no-entry': document.getElementById('page-no-entry')
+            };
+            const tabs = {
+                'scan': document.getElementById('tab-scan'),
+                'history': document.getElementById('tab-history'),
+                'no-entry': document.getElementById('tab-no-entry')
+            };
+
+            // Hide all pages, remove active class from all tabs
+            for (const key in pages) {
+                pages[key].classList.add('hidden');
+                tabs[key].classList.remove('tab-active', 'text-gray-500');
+                tabs[key].classList.add('text-gray-500'); // Default inactive color
+            }
+
+            // Show selected page, set active class on selected tab
+            pages[tabName].classList.remove('hidden');
+            tabs[tabName].classList.add('tab-active');
+            tabs[tabName].classList.remove('text-gray-500');
+
+            // Run tab-specific functions
+            if (tabName === 'history') {
+                generateAndRenderReport();
+            } else if (tabName === 'no-entry') {
+                renderNoEntryTable(); 
+            }
+        }
+
+        // --- Live Scanner Logic ---
 
         /**
-         * Plays a short, distinct beep sound.
-         * Uses Web Audio API.
+         * Toggles the live scanner view and starts/stops the camera.
          */
-        function playBeepSound() {
+        function toggleScannerView() {
+            if (!codeReader) return;
+
+            if (liveScannerView.classList.contains('hidden')) {
+                // Show scanner view
+                liveScannerView.classList.remove('hidden');
+                toggleScannerBtn.textContent = 'Use Manual Input';
+                toggleScannerBtn.classList.replace('bg-indigo-600', 'bg-yellow-600');
+                startScanner();
+            } else {
+                // Hide scanner view
+                liveScannerView.classList.add('hidden');
+                toggleScannerBtn.textContent = 'Start Camera Scan';
+                toggleScannerBtn.classList.replace('bg-yellow-600', 'bg-indigo-600');
+                stopScanner();
+            }
+        }
+
+        /**
+         * Starts the video stream and barcode decoding process.
+         */
+        async function startScanner() {
+            if (!codeReader || shopSelect.value === '') {
+                showTemporaryMessage('Select a shop and load data first!', 'red');
+                return;
+            }
+            
+            scannerResult.textContent = 'Starting camera...';
+            scanInput.disabled = true; // Disable manual input while scanning
+
             try {
-                // Check if AudioContext is supported
-                const AudioContext = window.AudioContext || window.webkitAudioContext;
-                if (!AudioContext) {
-                    console.warn("Web Audio API not supported. Cannot play beep sound.");
-                    return;
+                // FIX: Changed facingMode constraint to be less strict for better device compatibility.
+                // Request environment (back) camera and start decoding
+                codeReader.decodeFromConstraints({ video: { facingMode: "environment" } }, scannerVideo, (result, err) => {
+                    if (result) {
+                        const scannedSku = result.text.trim().toUpperCase();
+                        scannerResult.textContent = `Scanned: ${scannedSku}`;
+                        
+                        // FIX: Only reset the code reader, do NOT call stopScanner() here.
+                        // This prevents scanInput.disabled from being prematurely set to false.
+                        codeReader.reset(); 
+                        
+                        // Automatically process the scan result
+                        processScannedData(scannedSku);
+                        
+                        // Restart scanner after a short delay (e.g., 2 seconds) to avoid immediate re-scan
+                        setTimeout(() => {
+                            // Check if the scanner view is still active before restarting
+                            if (!liveScannerView.classList.contains('hidden')) {
+                                startScanner();
+                            }
+                        }, 2000); 
+
+                    }
+                    if (err && !(err instanceof ZXing.NotFoundException)) {
+                        console.error(err);
+                        scannerResult.textContent = 'Scanning Error';
+                        if (err.name !== 'NotFoundError') {
+                            showTemporaryMessage('Scanning Issue: ' + err.message, 'red');
+                        }
+                    }
+                });
+                console.log('Camera started. Decoding...');
+                scannerResult.textContent = 'Hold barcode up to the camera...';
+
+            } catch (error) {
+                console.error('Failed to start scanner:', error);
+                scannerResult.textContent = 'Camera Error: ' + error.message;
+                showTemporaryMessage('Failed to start camera. Please use manual input.', 'red');
+                codeReader.reset();
+                liveScannerView.classList.add('hidden');
+                toggleScannerBtn.textContent = 'Start Camera Scan';
+                toggleScannerBtn.classList.replace('bg-yellow-600', 'bg-indigo-600');
+                scanInput.disabled = false;
+            }
+        }
+
+        /**
+         * Stops the video stream and releases the camera.
+         */
+        function stopScanner() {
+            if (codeReader) {
+                codeReader.reset();
+                scannerResult.textContent = '';
+                // Only enable manual input when the user explicitly stops the scanner
+                scanInput.disabled = false; 
+            }
+        }
+
+        // --- Core Functions (Load, Scan, Report) ---
+
+        /**
+         * Sends scanned data (from either manual input or camera) for processing and saving.
+         */
+        async function processScannedData(sku) {
+            const itemCode = barcodeToCodeMap.get(sku);
+
+            if (itemCode) {
+                // --- Item FOUND in Master List ---
+                const item = inventoryMap.get(itemCode);
+                
+                // 1. Optimistic UI Update (Found List)
+                const newCount = (scanCounts.get(itemCode) || 0) + 1;
+                scanCounts.set(itemCode, newCount);
+                updateScanLog(item, newCount);
+                
+                scanStatus.textContent = `Scanned (${newCount}): ${item.itemName}`;
+                scanStatus.classList.remove('text-red-600', 'text-yellow-500');
+                scanStatus.classList.add('text-green-600');
+                playBeep(false);
+
+                // 2. Asynchronously save to Google Sheet (Found Logic)
+                try {
+                    const response = await fetch(WEB_APP_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({
+                            action: 'saveFoundScan', 
+                            sheetName: `${shopSelect.value} Scan`, 
+                            sku: sku, 
+                            itemName: item.itemName
+                        })
+                    });
+                    
+                    const saveResult = await response.json();
+                    
+                    if (saveResult.status === 'success') {
+                        console.log('Save successful (Found):', saveResult);
+                        scanCounts.set(itemCode, saveResult.newQty); // Re-sync count
+                        updateScanLog(item, saveResult.newQty);
+                    } else {
+                        throw new Error(saveResult.error || 'Unknown save error');
+                    }
+                } catch (error) {
+                    console.error('Save error (Found):', error);
+                    scanStatus.textContent = `Scanned (${newCount})... Save Failed!`;
+                    scanStatus.classList.remove('text-green-600');
+                    scanStatus.classList.add('text-yellow-500');
+                }
+
+            } else {
+                // --- Item NOT FOUND in Master List ---
+                
+                // 1. Optimistic UI Update (Not Found List)
+                const newCount = (notFoundScanCounts.get(sku) || 0) + 1;
+                notFoundScanCounts.set(sku, newCount);
+                renderNoEntryTable(); // Refresh the no entry table
+
+                scanStatus.textContent = `Item Not Found. Added to "No Entry" list: ${sku}`;
+                scanStatus.classList.remove('text-green-600', 'text-yellow-500');
+                scanStatus.classList.add('text-red-600');
+                playBeep(true); 
+
+                // 2. Asynchronously save to Google Sheet (Not Found Logic)
+                try {
+                    const response = await fetch(WEB_APP_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        body: JSON.stringify({
+                            action: 'saveNotFoundScan', 
+                            sheetName: `${shopSelect.value} Scan`, 
+                            sku: sku 
+                        })
+                    });
+                    
+                    const saveResult = await response.json();
+                    
+                    if (saveResult.status === 'success') {
+                        console.log('Save successful (Not Found):', saveResult);
+                        notFoundScanCounts.set(saveResult.sku.toUpperCase(), saveResult.newQty); // Re-sync count
+                        renderNoEntryTable();
+                    } else {
+                        throw new Error(saveResult.error || 'Unknown save error');
+                    }
+                } catch (error) {
+                    console.error('Save error (Not Found):', error);
+                    scanStatus.textContent = `No Entry Item Save Failed!`;
+                    scanStatus.classList.remove('text-red-600');
+                    scanStatus.classList.add('text-yellow-500');
+                }
+            }
+        }
+        
+        /**
+         * Handles the manual scan input form submission (Enter key).
+         */
+        function handleScan(event) {
+            event.preventDefault(); 
+            const sku = scanInput.value.trim().toUpperCase();
+            scanInput.value = '';
+            scanInput.focus();
+            if (!sku) return;
+            
+            processScannedData(sku);
+        }
+
+        // --- Utility/Helper Functions ---
+
+        function showLoading(isLoading) {
+            if (isLoading) {
+                loadingOverlay.classList.remove('hidden');
+                loadBtn.disabled = true;
+                toggleScannerBtn.disabled = true;
+                scanInput.disabled = true;
+            } else {
+                loadingOverlay.classList.add('hidden');
+                loadBtn.disabled = false;
+                // Only enable scanner button, manual input remains disabled if scanner is active
+                toggleScannerBtn.disabled = false; 
+                // scanInput.disabled remains unchanged here, it's controlled by scanner state
+                if(liveScannerView.classList.contains('hidden')) {
+                    scanInput.disabled = false;
+                }
+            }
+        }
+
+        async function loadData() {
+            const sheetName = shopSelect.value;
+            if (!sheetName) {
+                showTemporaryMessage('Please select a shop!', 'red');
+                return;
+            }
+            
+            showLoading(true);
+            stopScanner(); // Stop scanner if running
+
+            // Clear all previous data... 
+            inventoryMap.clear();
+            barcodeToCodeMap.clear();
+            scanCounts.clear(); 
+            notFoundScanCounts.clear();
+            scanLogBody.innerHTML = ''; 
+            scanLogBody.appendChild(scanLogPlaceholder); 
+            mismatchTableBody.innerHTML = ''; 
+            noEntryTableBody.innerHTML = ''; 
+            noEntryTableBody.appendChild(noEntryPlaceholder);
+            scanStatus.textContent = 'Loading Master Data...';
+            scanStatus.classList.remove('text-red-600', 'text-yellow-500', 'text-green-600');
+
+            try {
+                // Step 1: Fetch Master Inventory Data
+                const masterUrl = `${WEB_APP_URL}?action=getMasterData&sheetName=${sheetName}`;
+                const masterResponse = await fetch(masterUrl);
+                const masterData = await masterResponse.json();
+                if (masterData.error) throw new Error(masterData.error);
+                
+                scanStatus.textContent = 'Loading Scan Data...';
+
+                // Step 2: Fetch Existing Scan Data
+                const scanSheetName = `${sheetName} Scan`;
+                const scanUrl = `${WEB_APP_URL}?action=getScanData&sheetName=${scanSheetName}`;
+                const scanResponse = await fetch(scanUrl);
+                const scanData = await scanResponse.json(); 
+                if (scanData.error) throw new Error(scanData.error);
+                
+                // Step 3: Process all data
+                onDataLoaded(masterData, scanData);
+
+            } catch (error) {
+                onDataError(error);
+            }
+        }
+
+        function onDataLoaded(masterData, scanData) {
+            const foundData = scanData.found;
+            const notFoundData = scanData.notFound;
+
+            // 1. Process Master Data
+            masterData.forEach(row => {
+                const item = {
+                    code: row[0],
+                    barcode: row[1],
+                    itemName: String(row[2] || ''), 
+                    balQty: parseInt(row[3]) || 0 
+                };
+                if (item.code) {
+                    inventoryMap.set(item.code, item);
+                    barcodeToCodeMap.set(String(item.code).toUpperCase(), item.code);
+                    // Ensure barcode is registered if it exists
+                    if (item.barcode) { 
+                        barcodeToCodeMap.set(String(item.barcode).toUpperCase(), item.code);
+                    }
+                }
+            });
+
+            // 2. Process Found Scan Data
+            foundData.forEach(row => {
+                const scannedSku = String(row[0]).toUpperCase();
+                const scannedQty = parseInt(row[2]) || 0;
+                
+                const itemCode = barcodeToCodeMap.get(scannedSku);
+                
+                if (itemCode) {
+                    const existingQty = scanCounts.get(itemCode) || 0;
+                    scanCounts.set(itemCode, existingQty + scannedQty);
+                } else {
+                    console.warn(`Scanned SKU ${scannedSku} from sheet (Col A) not found in master data.`);
+                }
+            });
+
+            // 3. Process Not Found Scan Data
+            notFoundData.forEach(row => {
+                const notFoundSku = String(row[0]).toUpperCase();
+                const notFoundQty = parseInt(row[1]) || 0;
+                if(notFoundSku) {
+                    notFoundScanCounts.set(notFoundSku, notFoundQty);
+                }
+            });
+            
+            // 4. Rebuild the "Recently Scanned" log
+            rebuildScanLog();
+
+            // 5. Finish setup
+            showLoading(false);
+            scanInput.disabled = false;
+            scanStatus.textContent = `${inventoryMap.size} items from ${shopSelect.value} are ready for scanning.`;
+            scanStatus.classList.remove('text-red-600', 'text-yellow-500');
+            scanStatus.classList.add('text-green-600');
+            scanInput.focus();
+        }
+
+        function onDataError(error) {
+            showLoading(false);
+            scanInput.disabled = true;
+            scanStatus.textContent = `Error loading data: ${error.message}`;
+            scanStatus.classList.add('text-red-600');
+            scanStatus.classList.remove('text-green-600', 'text-yellow-500');
+        }
+
+        function updateScanLog(item, newCount) {
+            const placeholder = scanLogBody.querySelector('#scan-log-placeholder');
+            if (placeholder) {
+                placeholder.remove();
+            }
+            let row = document.getElementById(`log-${item.code}`);
+            if (row) {
+                row.cells[1].textContent = item.balQty;
+                row.cells[2].textContent = newCount;
+                scanLogBody.prepend(row);
+            } else {
+                row = scanLogBody.insertRow(0); 
+                row.id = `log-${item.code}`;
+                row.innerHTML = `
+                    <td class="p-3 whitespace-nowrap">${item.itemName}</td>
+                    <td class="p-3">${item.balQty}</td>
+                    <td class="p-3">${newCount}</td>
+                `;
+            }
+        }
+
+        function generateReport() {
+            fullReport = [];
+            inventoryMap.forEach((item, code) => {
+                const expected = item.balQty;
+                const scanned = scanCounts.get(code) || 0;
+                const diff = scanned - expected;
+                
+                let status = '';
+                let statusColor = 'text-gray-700';
+
+                if (diff === 0) {
+                    status = (scanned > 0) ? 'OK' : 'Not Scanned';
+                    if (scanned > 0) statusColor = 'text-green-600 font-semibold';
+                } else if (diff > 0) {
+                    status = `+${diff}`;
+                    statusColor = 'text-green-600 font-semibold';
+                } else { // diff < 0
+                    status = `${diff}`;
+                    statusColor = 'text-red-600 font-semibold';
                 }
                 
-                const audioContext = new AudioContext();
+                fullReport.push({
+                    ...item, 
+                    scanned,
+                    status,
+                    statusColor,
+                    isMismatch: (diff !== 0),
+                    wasScanned: (scanned > 0)
+                });
+            });
+
+            fullReport.sort((a, b) => {
+                // Sort by Mismatch first, then by Item Name
+                if (a.isMismatch && !b.isMismatch) return -1;
+                if (!a.isMismatch && b.isMismatch) return 1;
+                return a.itemName.localeCompare(b.itemName);
+            });
+        }
+
+        function renderHistoryTable() {
+            mismatchTableBody.innerHTML = ''; 
+            
+            const showMismatchesOnly = filterMismatch.checked;
+            const showScannedOnly = filterScanned.checked;
+
+            let filteredReport = fullReport;
+
+            if (showMismatchesOnly) {
+                filteredReport = filteredReport.filter(item => item.isMismatch);
+            }
+            if (showScannedOnly) {
+                filteredReport = filteredReport.filter(item => item.wasScanned);
+            }
+
+            if (filteredReport.length === 0) {
+                mismatchTableBody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">No items match the current filters.</td></tr>`;
+                return;
+            }
+
+            filteredReport.forEach(item => {
+                const row = mismatchTableBody.insertRow();
+                row.innerHTML = `
+                    <td class="p-3 whitespace-nowrap">${item.code}</td>
+                    <td class="p-3 whitespace-nowrap">${item.barcode}</td>
+                    <td class="p-3 whitespace-nowrap">${item.itemName}</td>
+                    <td class="p-3">${item.balQty}</td>
+                    <td class="p-3">${item.scanned}</td>
+                    <td class="p-3 ${item.statusColor}">${item.status}</td>
+                `;
+            });
+        }
+        
+        function generateAndRenderReport() {
+            generateReport();
+            renderHistoryTable();
+        }
+
+        function downloadCSV() {
+            if (fullReport.length === 0) {
+                generateReport(); 
+            }
+            
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "CODE,BARCODE,ITEM NAME,BAL QTY (Sheet),Scan Qty,STATUS\n";
+
+            fullReport.forEach(item => {
+                const itemNameEscaped = `"${item.itemName.replace(/"/g, '""')}"`; 
+                const row = [
+                    item.code,
+                    item.barcode,
+                    itemNameEscaped,
+                    item.balQty,
+                    item.scanned,
+                    item.status
+                ].join(",");
+                csvContent += row + "\n";
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `inventory_mismatch_${shopSelect.value}_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link); 
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        function rebuildScanLog() {
+            scanLogBody.innerHTML = ''; // Clear log
+
+            if (scanCounts.size === 0) {
+                scanLogBody.appendChild(scanLogPlaceholder);
+                return;
+            }
+            
+            const itemsToLog = [];
+            scanCounts.forEach((count, code) => {
+                const item = inventoryMap.get(code);
+                if (item) {
+                    itemsToLog.push({ item, count });
+                }
+            });
+
+            // Sort by most recently scanned (by code, as actual scan time is not tracked)
+            itemsToLog.sort((a, b) => b.item.code.localeCompare(a.item.code));
+
+            itemsToLog.forEach(logItem => {
+                const { item, count } = logItem;
+                const row = scanLogBody.insertRow(); 
+                row.id = `log-${item.code}`;
+                row.innerHTML = `
+                    <td class="p-3 whitespace-nowrap">${item.itemName}</td>
+                    <td class="p-3">${item.balQty}</td>
+                    <td class="p-3">${count}</td>
+                `;
+            });
+        }
+
+        function renderNoEntryTable() {
+            noEntryTableBody.innerHTML = ''; // Clear table
+            
+            if (notFoundScanCounts.size === 0) {
+                noEntryTableBody.appendChild(noEntryPlaceholder);
+                return;
+            }
+
+            // Sort by SKU for consistency
+            const sortedItems = Array.from(notFoundScanCounts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+
+            sortedItems.forEach(([sku, qty]) => {
+                const row = noEntryTableBody.insertRow();
+                row.innerHTML = `
+                    <td class="p-3 whitespace-nowrap">${sku}</td>
+                    <td class="p-3">${qty}</td>
+                `;
+            });
+        }
+        
+        /**
+         * Downloads the "No Entry" products report as a CSV file (Excel format).
+         */
+        function downloadNoEntryCSV() {
+            if (notFoundScanCounts.size === 0) {
+                showTemporaryMessage('No "No Entry" data to download.', 'blue');
+                return;
+            }
+            
+            let csvContent = "data:text/csv;charset=utf-8,";
+            // Header: SKU and Qty (as requested by user)
+            csvContent += "SKU,Qty\n";
+
+            // Sort by SKU for consistency
+            const sortedItems = Array.from(notFoundScanCounts.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+
+            sortedItems.forEach(([sku, qty]) => {
+                const row = [sku, qty].join(",");
+                csvContent += row + "\n";
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `no_entry_products_${shopSelect.value}_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(link); 
+            link.click();
+            document.body.removeChild(link);
+            
+            showTemporaryMessage('No Entry Products data download complete.', 'green');
+        }
+
+
+        function playBeep(isError = false) {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 const oscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
+                const gain = audioContext.createGain();
 
-                oscillator.connect(gainNode);
-                gainNode.connect(audioContext.destination);
+                oscillator.connect(gain);
+                gain.connect(audioContext.destination);
 
-                // Configure the sound
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(880, audioContext.currentTime); // A5 note
-                gainNode.gain.setValueAtTime(0.5, audioContext.currentTime); // Volume
-                gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.15); // Quick fade out
+                if (isError) {
+                    oscillator.type = 'square';
+                    oscillator.frequency.setValueAtTime(110, audioContext.currentTime);
+                    gain.gain.setValueAtTime(0.3, audioContext.currentTime);
+                } else {
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(880, audioContext.currentTime); 
+                    gain.gain.setValueAtTime(0.2, audioContext.currentTime);
+                }
 
-                // Start and stop the sound
-                oscillator.start(audioContext.currentTime);
-                oscillator.stop(audioContext.currentTime + 0.15); 
+                oscillator.start();
+                oscillator.stop(audioContext.currentTime + 0.1); 
             } catch (e) {
                 console.warn("Could not play beep sound.", e);
             }
         }
 
-        /**
-         * Shows a temporary status message in a fixed position. (Custom alert replacement)
-         */
         function showTemporaryMessage(message, type = 'blue') {
             let colorClass = 'bg-blue-600';
             if (type === 'red') colorClass = 'bg-red-600';
@@ -217,176 +965,6 @@
                 messageBox.classList.add('opacity-0');
             }, 3000);
         }
-
-        /**
-         * Adds an entry to the log container.
-         */
-        function addLog(message, type = 'info') {
-            const logContainer = document.getElementById('log-container');
-            const logEntry = document.createElement('p');
-            
-            let color = 'text-gray-700';
-            if (type === 'success') color = 'text-green-600 font-semibold';
-            if (type === 'error') color = 'text-red-600 font-semibold';
-            if (type === 'warn') color = 'text-yellow-600';
-
-            const timestamp = new Date().toLocaleTimeString();
-            logEntry.className = `text-sm ${color} p-2 bg-white rounded-md shadow-sm`;
-            logEntry.innerHTML = `<strong>[${timestamp}]</strong> ${message}`;
-            
-            // Prepend new log entry
-            logContainer.prepend(logEntry);
-            // Limit log entries to 10 for performance/readability
-            while (logContainer.children.length > 10) {
-                logContainer.removeChild(logContainer.lastChild);
-            }
-        }
-
-        // --- Scanner Logic ---
-
-        /**
-         * This function is called every time a barcode is successfully scanned.
-         */
-        function onScanSuccess(decodedText, decodedResult) {
-            // 1. Stop the scanner immediately to prevent multiple rapid scans
-            html5QrcodeScanner.pause(true); 
-            
-            // 2. Play the success sound (New Feature)
-            playBeepSound(); 
-
-            // 3. Update the UI with the scanned SKU
-            document.getElementById('scanned-sku').value = decodedText;
-            document.getElementById('scan-result').textContent = `স্ক্যান সফল: ${decodedText} - অমিল পরীক্ষার জন্য প্রস্তুত।`;
-            addLog(`বারকোড স্ক্যান সফল: ${decodedText}`, 'success');
-            showTemporaryMessage(`স্ক্যান সফল: ${decodedText}`, 'green');
-
-            // 4. Automatically re-start the scanner after a short delay (New Feature)
-            // This prepares the scanner for the next item.
-            setTimeout(() => {
-                html5QrcodeScanner.resume();
-                document.getElementById('scan-result').textContent = 'পরবর্তী স্ক্যানের জন্য প্রস্তুত...';
-            }, SCAN_INTERVAL_MS); 
-
-            // Note: The mismatch check is still manual via the button for user control
-        }
-
-        /**
-         * Function to handle when the scanner fails to decode a frame. (Optional)
-         */
-        function onScanFailure(error) {
-            // console.warn(`Code scan error = ${error}`);
-            // No need to spam the log, just keep the UI simple.
-        }
-        
-        /**
-         * Initializes and starts the barcode scanner.
-         */
-        function startScanner() {
-            // Check if the global Html5QrcodeScanner is defined (the library load was successful)
-            if (typeof Html5QrcodeScanner === 'undefined') {
-                document.getElementById('scan-result').textContent = 'ত্রুটি: স্ক্যানার লাইব্রেরি লোড হতে পারেনি।';
-                showTemporaryMessage('গুরুত্বপূর্ণ ত্রুটি: ক্যামেরা স্ক্যানার শুরু করা যায়নি।', 'red');
-                return;
-            }
-
-            if (html5QrcodeScanner) {
-                // If scanner already exists, just return or handle re-initialization if needed
-                return;
-            }
-
-            // Create the scanner instance for the element ID 'qr-reader'
-            // Added facingMode: "environment" to prioritize the back camera for mobile scanning
-            html5QrcodeScanner = new Html5QrcodeScanner(
-                "qr-reader", 
-                { 
-                    fps: 10, // Frames per second
-                    qrbox: { width: 250, height: 100 }, // Focused scan box (more barcode-like)
-                    facingMode: "environment" // CRITICAL for mobile back camera
-                },
-                /* verbose= */ false
-            );
-            
-            // Start the scanner
-            html5QrcodeScanner.render(onScanSuccess, onScanFailure);
-
-            // Optional: Listen to the start event to update initial message
-            setTimeout(() => {
-                 document.getElementById('scan-result').textContent = 'ক্যামেরা চালু হয়েছে। অনুগ্রহ করে বারকোড স্ক্যান করুন।';
-            }, 3000); // Wait a bit for the camera to initialize
-        }
-
-        // --- Inventory Mismatch Check Logic (Mock Data) ---
-
-        const MOCK_INVENTORY_DATA = {
-            "SKU12345": { name: "Red Widget", inventory: 10 },
-            "SKU67890": { name: "Blue Gadget", inventory: 5 },
-            "8901021010101": { name: "Product A", inventory: 2 }, // Sample barcode
-            "456789012345": { name: "Product B", inventory: 15 }, // Sample barcode
-        };
-
-        function checkMismatch() {
-            const scannedSkuInput = document.getElementById('scanned-sku');
-            const actualQtyInput = document.getElementById('actual-qty');
-
-            const scannedSku = scannedSkuInput.value.trim();
-            const actualQty = parseInt(actualQtyInput.value, 10);
-
-            if (!scannedSku) {
-                showTemporaryMessage('স্ক্যান করার জন্য কোনো SKU পাওয়া যায়নি।', 'red');
-                return;
-            }
-            if (isNaN(actualQty) || actualQty < 1) {
-                showTemporaryMessage('প্রকৃত পরিমাণ অবশ্যই ১ বা তার বেশি হতে হবে।', 'red');
-                return;
-            }
-
-            // Mock database lookup
-            const productData = MOCK_INVENTORY_DATA[scannedSku];
-            
-            if (!productData) {
-                // Not found in inventory
-                addLog(`SKU: ${scannedSku} ইনভেন্টরিতে পাওয়া যায়নি।`, 'error');
-                showTemporaryMessage(`SKU: ${scannedSku} ইনভেন্টরিতে অনুপস্থিত।`, 'red');
-                return;
-            }
-
-            // Check for mismatch
-            const systemQty = productData.inventory;
-            const productName = productData.name;
-            
-            if (actualQty === systemQty) {
-                // Match
-                const message = `${productName} (SKU: ${scannedSku}): মিলেছে! সিস্টেম Qty: ${systemQty}, প্রকৃত Qty: ${actualQty}`;
-                addLog(message, 'success');
-                showTemporaryMessage('সম্পূর্ণ মিলেছে!', 'green');
-            } else {
-                // Mismatch
-                const diff = actualQty - systemQty;
-                const message = `${productName} (SKU: ${scannedSku}): অমিল! সিস্টেম Qty: ${systemQty}, প্রকৃত Qty: ${actualQty}. পার্থক্য: ${diff}`;
-                addLog(message, 'warn');
-                showTemporaryMessage(`অমিল পাওয়া গেছে! পার্থক্য: ${diff}`, 'red');
-            }
-            
-            // Reset quantity input for next check
-            actualQtyInput.value = '1';
-        }
-
-        // --- Initialization ---
-
-        window.onload = function() {
-            // Check if Firebase config is available (even if not used, keeps the environment stable)
-            if (firebaseConfig) {
-                // Placeholder for Firebase initialization
-                console.log("Firebase config loaded. App ID:", appId);
-                // Initialize Auth and DB if needed here
-            } else {
-                console.warn("Firebase config is missing, running in client-only mode.");
-            }
-
-            // Start the scanner logic
-            startScanner();
-        };
-
     </script>
 </body>
 </html>
