@@ -56,14 +56,15 @@
             --tw-text-opacity: 1;
             color: rgb(37 99 235 / var(--tw-text-opacity));
         }
-        /* Full-width video container for mobile scanning (1:1 aspect ratio) */
+        /* Full-width video container for mobile scanning (4:3 aspect ratio) */
         #scanner-container {
             width: 100%;
-            padding-top: 100%; /* Creates a 1:1 aspect ratio box */
+            padding-top: 75%; /* CHANGED: Was 100%. This is now 4:3 ratio. */
             position: relative;
             background-color: #000;
             transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
             border: 4px solid #374151; /* Default border color (gray-700) */
+            overflow: hidden; /* ADDED: To hide video overflow */
         }
         #scanner-video {
             position: absolute;
@@ -79,28 +80,44 @@
             box-shadow: 0 0 20px rgba(16, 185, 129, 0.8) !important;
         }
 
-        /* --- UPDATED SCANNING LINE --- */
-        /* This line animates up and down inside the scanner container. */
+        /* --- REMOVED OLD SCANNING LINE --- */
         #scanner-container::after {
-            content: '';
+            content: none;
+        }
+
+        /* --- NEW: Viewfinder Box Styles --- */
+        #viewfinder-box {
             position: absolute;
-            top: 5%; /* Start near the top */
-            left: 5%;
-            right: 5%;
-            height: 3px;
-            background: #FF0000; /* Solid Red */
-            box-shadow: 0 0 10px rgba(255, 0, 0, 0.9), 0 0 5px rgba(255, 255, 255, 0.5);
-            animation: scan-line-move 2.5s infinite alternate ease-in-out;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 85%; /* 85% of the container width */
+            height: 50%; /* 50% of the container height (making it rectangular) */
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5); /* Dim overlay "cutout" */
             z-index: 10;
+            overflow: hidden; /* To contain the line */
+            border-radius: 8px;
+        }
+
+        #viewfinder-line {
+            position: absolute;
+            top: 0; /* Start at the top */
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: #FF0000;
+            box-shadow: 0 0 10px rgba(255, 0, 0, 0.9);
+            animation: scan-line-move 2.5s infinite alternate ease-in-out;
         }
         
         /* UPDATED Keyframe for up-and-down scanning */
         @keyframes scan-line-move {
             from {
-                top: 5%;
+                top: 0; /* Start at the very top of the box */
             }
             to {
-                top: 95%;
+                top: 100%; /* End at the very bottom */
             }
         }
         
@@ -172,6 +189,11 @@
                     <div id="scanner-container" class="relative rounded-lg overflow-hidden">
                         <!-- Video element will show the camera feed -->
                         <video id="scanner-video" class="w-full h-full" playsinline></video>
+                        
+                        <!-- NEW: Viewfinder Box -->
+                        <div id="viewfinder-box">
+                            <div id="viewfinder-line"></div>
+                        </div>
                     </div>
                     <div id="scanner-result" class="mt-2 text-center text-red-600 font-bold text-lg"></div>
                     <button id="stop-scanner-btn" class="w-full mt-4 bg-red-500 text-white px-5 py-2 rounded-lg shadow-sm hover:bg-red-600 transition-colors" onclick="toggleScannerView()">Stop Scan</button>
@@ -974,27 +996,28 @@
 
         function playBeep(isError = false) {
             try {
+                // FIX: Was 'audioCtxt', corrected to 'audioContext'
                 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioCtxt.createOscillator();
-                const gain = audioCtxt.createGain();
+                const oscillator = audioContext.createOscillator(); // FIX
+                const gain = audioContext.createGain(); // FIX
 
                 oscillator.connect(gain);
-                gain.connect(audioCtxt.destination);
+                gain.connect(audioContext.destination); // FIX
 
                 if (isError) {
                     // Lower frequency square wave for error sound
                     oscillator.type = 'square';
-                    oscillator.frequency.setValueAtTime(220, audioCtxt.currentTime);
-                    gain.gain.setValueAtTime(0.3, audioCtxt.currentTime);
+                    oscillator.frequency.setValueAtTime(220, audioContext.currentTime); // FIX
+                    gain.gain.setValueAtTime(0.3, audioContext.currentTime); // FIX
                 } else {
                     // Higher frequency sine wave for success sound
                     oscillator.type = 'sine';
-                    oscillator.frequency.setValueAtTime(1200, audioCtxt.currentTime); 
-                    gain.gain.setValueAtTime(0.2, audioCtxt.currentTime);
+                    oscillator.frequency.setValueAtTime(1200, audioContext.currentTime); // FIX
+                    gain.gain.setValueAtTime(0.2, audioContext.currentTime); // FIX
                 }
 
                 oscillator.start();
-                oscillator.stop(audioCtxt.currentTime + 0.1); 
+                oscillator.stop(audioContext.currentTime + 0.1); // FIX
             } catch (e) {
                 console.warn("Could not play beep sound.", e);
             }
@@ -1025,3 +1048,4 @@
     </script>
 </body>
 </html>
+
