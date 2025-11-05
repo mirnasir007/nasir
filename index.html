@@ -108,10 +108,10 @@
             height: 3px;
             background: #FF0000;
             box-shadow: 0 0 10px rgba(255, 0, 0, 0.9);
-            animation: scan-line-move 2.5s infinite alternate ease-in-out;
+            animation: scan-line-move 1.5s infinite alternate ease-in-out;
         }
         
-        /* UPDATED Keyframe for up-and-down scanning */
+        /* UPDATED Keyframe for up-and-down scanning - faster animation */
         @keyframes scan-line-move {
             from {
                 top: 0; /* Start at the very top of the box */
@@ -303,7 +303,8 @@
         let notFoundScanCounts = new Map(); // For "No Entry" items
         let fullReport = [];
         let codeReader = null; // ZXing Code Reader instance
-        let isProcessingScan = false; // NEW: Lock to prevent re-scanning same barcode immediately
+        let isProcessingScan = false; // Lock to prevent re-scanning same barcode immediately
+        let isScannerActive = false; // Track if scanner is running
 
         // --- DOM Elements ---
         const scanInput = document.getElementById('scan-input');
@@ -375,15 +376,31 @@
             scanForm.addEventListener('submit', handleScan);
             downloadBtn.addEventListener('click', downloadCSV);
             
-            // Initialize ZXing Code Reader
+            // Initialize ZXing Code Reader with optimized settings
             if (typeof ZXing !== 'undefined' && typeof ZXing.BrowserMultiFormatReader === 'function') {
                 // IMPORTANT: Use BrowserMultiFormatReader which is robust for various devices
                 codeReader = new ZXing.BrowserMultiFormatReader(); 
-                console.log('ZXing Code Reader initialized.');
+                
+                // Set up optimized hints for faster scanning
+                codeReader.hints = [
+                    ZXing.DecodeHintType.POSSIBLE_FORMATS,
+                    [
+                        ZXing.BarcodeFormat.CODE_128,
+                        ZXing.BarcodeFormat.CODE_39,
+                        ZXing.BarcodeFormat.EAN_13,
+                        ZXing.BarcodeFormat.EAN_8,
+                        ZXing.BarcodeFormat.UPC_A,
+                        ZXing.BarcodeFormat.UPC_E,
+                        ZXing.BarcodeFormat.CODABAR,
+                        ZXing.BarcodeFormat.ITF
+                    ]
+                ];
+                
+                console.log('ZXing Code Reader initialized with optimized settings.');
             } else {
                 console.warn('ZXing library not loaded or initialized correctly. Live scanning disabled.');
                 toggleScannerBtn.disabled = true;
-                scannerButtonText.textContent = 'Camera Scan Unavailable'; // TRANSLATED
+                scannerButtonText.textContent = 'Camera Scan Unavailable';
                 toggleScannerBtn.classList.replace('bg-indigo-600', 'bg-gray-400');
             }
         });
@@ -391,7 +408,7 @@
         // --- Tab Switching ---
         function switchTab(tabName) {
             // Stop scanner if it's running when switching tabs
-            if (codeReader && !liveScannerView.classList.contains('hidden')) {
+            if (isScannerActive) {
                 toggleScannerView();
             }
             
@@ -426,7 +443,7 @@
             }
         }
 
-        // --- Live Scanner Logic (UPDATED for speed) ---
+        // --- Optimized Live Scanner Logic for Mobile ---
 
         /**
          * Toggles the live scanner view and starts/stops the camera.
@@ -434,72 +451,123 @@
         function toggleScannerView() {
             if (!codeReader) return;
 
-            if (liveScannerView.classList.contains('hidden')) {
-                // Show scanner view
+            if (!isScannerActive) {
+                // Show scanner view and start camera
                 if (shopSelect.value === '') {
-                    showTemporaryMessage('Select a shop and load data first!', 'red'); // TRANSLATED
+                    showTemporaryMessage('Select a shop and load data first!', 'red');
                     return;
                 }
                 
                 liveScannerView.classList.remove('hidden');
-                scannerButtonText.textContent = 'Use Manual Input'; // TRANSLATED
+                scannerButtonText.textContent = 'Use Manual Input';
                 toggleScannerBtn.classList.replace('bg-indigo-600', 'bg-yellow-600');
                 startScanner();
             } else {
-                // Hide scanner view
+                // Hide scanner view and stop camera
                 liveScannerView.classList.add('hidden');
-                scannerButtonText.textContent = 'Start Camera Scan'; // TRANSLATED
+                scannerButtonText.textContent = 'Start Camera Scan';
                 toggleScannerBtn.classList.replace('bg-yellow-600', 'bg-indigo-600');
                 stopScanner();
             }
         }
 
         /**
-         * Starts the video stream and barcode decoding process. (Optimized for continuous scan)
+         * Starts the video stream and barcode decoding process with optimized settings.
          */
         async function startScanner() {
-            if (!codeReader) return;
+            if (!codeReader || isScannerActive) return;
             
-            isProcessingScan = false; // Reset lock
-            scannerResult.textContent = 'Starting camera...'; // TRANSLATED
-            scanInput.disabled = true; // Disable manual input while scanning
+            isScannerActive = true;
+            isProcessingScan = false;
+            scannerResult.textContent = 'Starting camera...';
+            scanInput.disabled = true;
 
             try {
-                // Request environment (back) camera
+                // Optimized constraints for mobile barcode scanning
                 const constraints = {
-                    video: { facingMode: "environment" }
+                    video: { 
+                        facingMode: "environment",
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        focusMode: "continuous"
+                    },
+                    audio: false
                 };
 
-                // Use decodeFromConstraints, but rely on the `isProcessingScan` lock 
-                // for rapid, continuous scanning instead of resetting the stream immediately.
-                codeReader.decodeFromConstraints(constraints, scannerVideo, (result, err) => {
-                    if (result && !isProcessingScan) {
-                        isProcessingScan = true; // Lock the scanner
-                        const scannedSku = result.text.trim().toUpperCase();
-                        
-                        // Handle the success visually, audibly, and logically
-                        handleScanSuccess(scannedSku);
-                    }
-                    if (err && !(err instanceof ZXing.NotFoundException || err.name === 'NotStreamReadyException')) {
-                        console.error(err);
-                        scannerResult.textContent = 'Scanning Error: ' + (err.message || 'Unknown Error'); // TRANSLATED
-                        if (err.name === 'NotAllowedError') {
-                             showTemporaryMessage('Grant permission to access the camera.', 'red'); // TRANSLATED
-                        }
-                    }
-                });
+                // Get available devices and select back camera
+                const devices = await codeReader.listVideoInputDevices();
+                const backCamera = devices.find(device => 
+                    device.label.toLowerCase().includes('back') || 
+                    device.label.includes('2') || // Often back camera is camera 2
+                    !device.label.toLowerCase().includes('front')
+                );
+
+                if (backCamera) {
+                    constraints.video.deviceId = { exact: backCamera.deviceId };
+                }
+
+                // Start the video stream
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                scannerVideo.srcObject = stream;
                 
-                console.log('Camera started. Decoding...');
-                scannerResult.textContent = 'Hold barcode up to the camera...'; // TRANSLATED
+                // Wait for video to be ready
+                scannerVideo.onloadedmetadata = () => {
+                    scannerVideo.play();
+                    
+                    // Start the decoding loop
+                    decodeLoop();
+                    
+                    console.log('Camera started with optimized settings.');
+                    scannerResult.textContent = 'Ready - Point camera at barcode';
+                };
 
             } catch (error) {
                 console.error('Failed to start scanner:', error);
-                scannerResult.textContent = 'Camera Error: ' + error.message; // TRANSLATED
-                showTemporaryMessage('Failed to start camera. Please use manual input.', 'red'); // TRANSLATED
-                stopScanner(); // Stop/reset everything
-                liveScannerView.classList.add('hidden');
-                scannerButtonText.textContent = 'Start Camera Scan';
-                toggleScannerBtn.classList.replace('bg-yellow-600', 'bg-indigo-600');
+                scannerResult.textContent = 'Camera Error: ' + error.message;
+                showTemporaryMessage('Failed to start camera. Please use manual input.', 'red');
+                stopScanner();
+            }
+        }
+
+        /**
+         * Continuous decoding loop for fast barcode detection
+         */
+        async function decodeLoop() {
+            if (!isScannerActive) return;
+            
+            try {
+                const result = await codeReader.decodeOnceFromVideoDevice(null, scannerVideo);
+                
+                if (result && !isProcessingScan) {
+                    isProcessingScan = true;
+                    const scannedSku = result.text.trim().toUpperCase();
+                    
+                    // Handle the success
+                    handleScanSuccess(scannedSku);
+                    
+                    // Continue scanning after a brief delay
+                    setTimeout(() => {
+                        if (isScannerActive) {
+                            isProcessingScan = false;
+                            decodeLoop();
+                        }
+                    }, 500); // Reduced delay for faster scanning
+                } else {
+                    // Continue scanning immediately if no result or still processing
+                    if (isScannerActive) {
+                        requestAnimationFrame(decodeLoop);
+                    }
+                }
+            } catch (error) {
+                // Ignore NotFoundException (no barcode found) and continue
+                if (error.name !== 'NotFoundException') {
+                    console.error('Scan error:', error);
+                }
+                
+                // Continue scanning
+                if (isScannerActive) {
+                    requestAnimationFrame(decodeLoop);
+                }
             }
         }
 
@@ -509,35 +577,40 @@
         function stopScanner() {
             if (codeReader) {
                 codeReader.reset();
-                scannerResult.textContent = '';
-                isProcessingScan = false; // Ensure lock is released
-                // Only enable manual input when the user explicitly stops the scanner
-                scanInput.disabled = false; 
             }
+            
+            if (scannerVideo.srcObject) {
+                const tracks = scannerVideo.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+                scannerVideo.srcObject = null;
+            }
+            
+            scannerResult.textContent = '';
+            isProcessingScan = false;
+            isScannerActive = false;
+            scanInput.disabled = false;
         }
         
         /**
-         * NEW: Handles visual, audio feedback, and auto-ready for next scan.
+         * Handles visual, audio feedback, and auto-ready for next scan.
          */
         function handleScanSuccess(scannedSku) {
             // 1. Visual/Audio Feedback
-            scannerResult.textContent = `Scanned: ${scannedSku}`; // TRANSLATED
+            scannerResult.textContent = `Scanned: ${scannedSku}`;
             
             // Add green pulse border/effect
             scannerContainer.classList.add('scan-success-pulse');
             
-            // 2. Data Processing (This calls playBeep inside)
+            // 2. Data Processing
             processScannedData(scannedSku);
 
-            // 3. Auto-Ready for next scan (Unlock after a cool-down)
+            // 3. Auto-ready for next scan
             setTimeout(() => {
-                scannerContainer.classList.remove('scan-success-pulse'); // Remove visual feedback
-                isProcessingScan = false; // Unlock the scanner for the next item
-                if (!liveScannerView.classList.contains('hidden')) {
-                    // Only reset message if scanner is still active
-                    scannerResult.textContent = 'Scan Success! Ready for next.'; // TRANSLATED
+                scannerContainer.classList.remove('scan-success-pulse');
+                if (isScannerActive) {
+                    scannerResult.textContent = 'Scan Success! Ready for next.';
                 }
-            }, 1000); // 1.0 seconds cool-down before next scan (can be adjusted)
+            }, 800);
         }
 
 
@@ -558,7 +631,7 @@
                 scanCounts.set(itemCode, newCount);
                 updateScanLog(item, newCount);
                 
-                scanStatus.textContent = `Scanned (${newCount}): ${item.itemName}`; // TRANSLATED
+                scanStatus.textContent = `Scanned (${newCount}): ${item.itemName}`;
                 scanStatus.classList.remove('text-red-600', 'text-yellow-500');
                 scanStatus.classList.add('text-green-600');
                 playBeep(false); // Success Beep
@@ -587,7 +660,7 @@
                     }
                 } catch (error) {
                     console.error('Save error (Found):', error);
-                    scanStatus.textContent = `Scanned (${newCount})... Save Failed!`; // TRANSLATED
+                    scanStatus.textContent = `Scanned (${newCount})... Save Failed!`;
                     scanStatus.classList.remove('text-green-600');
                     scanStatus.classList.add('text-yellow-500');
                 }
@@ -600,7 +673,7 @@
                 notFoundScanCounts.set(sku, newCount);
                 renderNoEntryTable(); // Refresh the no entry table
 
-                scanStatus.textContent = `Item Not Found. Added to "No Entry" list: ${sku}`; // TRANSLATED
+                scanStatus.textContent = `Item Not Found. Added to "No Entry" list: ${sku}`;
                 scanStatus.classList.remove('text-green-600', 'text-yellow-500');
                 scanStatus.classList.add('text-red-600');
                 playBeep(true); // Error Beep
@@ -628,7 +701,7 @@
                     }
                 } catch (error) {
                     console.error('Save error (Not Found):', error);
-                    scanStatus.textContent = `No Entry Item Save Failed!`; // TRANSLATED
+                    scanStatus.textContent = `No Entry Item Save Failed!`;
                     scanStatus.classList.remove('text-red-600');
                     scanStatus.classList.add('text-yellow-500');
                 }
@@ -656,14 +729,12 @@
                 loadBtn.disabled = true;
                 toggleScannerBtn.disabled = true;
                 scanInput.disabled = true;
-                if(codeReader) stopScanner(); // Stop scanner during load
+                if(isScannerActive) stopScanner();
             } else {
                 loadingOverlay.classList.add('hidden');
                 loadBtn.disabled = false;
-                // Only enable scanner button, manual input remains disabled if scanner is active
                 toggleScannerBtn.disabled = false; 
-                // scanInput.disabled remains unchanged here, it's controlled by scanner state
-                if(liveScannerView.classList.contains('hidden')) {
+                if(!isScannerActive) {
                     scanInput.disabled = false;
                 }
             }
@@ -672,12 +743,12 @@
         async function loadData() {
             const sheetName = shopSelect.value;
             if (!sheetName) {
-                showTemporaryMessage('Please select a shop!', 'red'); // TRANSLATED
+                showTemporaryMessage('Please select a shop!', 'red');
                 return;
             }
             
             showLoading(true);
-            stopScanner(); // Stop scanner if running
+            stopScanner();
 
             // Clear all previous data... 
             inventoryMap.clear();
@@ -689,7 +760,7 @@
             mismatchTableBody.innerHTML = ''; 
             noEntryTableBody.innerHTML = ''; 
             noEntryTableBody.appendChild(noEntryPlaceholder);
-            scanStatus.textContent = 'Loading Master Data...'; // TRANSLATED
+            scanStatus.textContent = 'Loading Master Data...';
             scanStatus.classList.remove('text-red-600', 'text-yellow-500', 'text-green-600');
 
             try {
@@ -699,7 +770,7 @@
                 const masterData = await masterResponse.json();
                 if (masterData.error) throw new Error(masterData.error);
                 
-                scanStatus.textContent = 'Loading Scan Data...'; // TRANSLATED
+                scanStatus.textContent = 'Loading Scan Data...';
 
                 // Step 2: Fetch Existing Scan Data
                 const scanSheetName = `${sheetName} Scan`;
@@ -768,7 +839,7 @@
             // 5. Finish setup
             showLoading(false);
             scanInput.disabled = false;
-            scanStatus.textContent = `${inventoryMap.size} items from ${shopSelect.value} are ready for scanning.`; // TRANSLATED
+            scanStatus.textContent = `${inventoryMap.size} items from ${shopSelect.value} are ready for scanning.`;
             scanStatus.classList.remove('text-red-600', 'text-yellow-500');
             scanStatus.classList.add('text-green-600');
             scanInput.focus();
@@ -777,7 +848,7 @@
         function onDataError(error) {
             showLoading(false);
             scanInput.disabled = true;
-            scanStatus.textContent = `Error loading data: ${error.message}`; // TRANSLATED
+            scanStatus.textContent = `Error loading data: ${error.message}`;
             scanStatus.classList.add('text-red-600');
             scanStatus.classList.remove('text-green-600', 'text-yellow-500');
         }
@@ -814,7 +885,7 @@
                 let statusColor = 'text-gray-700';
 
                 if (diff === 0) {
-                    status = (scanned > 0) ? 'OK' : 'Not Scanned'; // TRANSLATED
+                    status = (scanned > 0) ? 'OK' : 'Not Scanned';
                     if (scanned > 0) statusColor = 'text-green-600 font-semibold';
                 } else if (diff > 0) {
                     status = `+${diff}`;
@@ -858,7 +929,7 @@
             }
 
             if (filteredReport.length === 0) {
-                mismatchTableBody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">No items match the current filters.</td></tr>`; // TRANSLATED
+                mismatchTableBody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-gray-500">No items match the current filters.</td></tr>`;
                 return;
             }
 
@@ -966,7 +1037,7 @@
          */
         function downloadNoEntryCSV() {
             if (notFoundScanCounts.size === 0) {
-                showTemporaryMessage('No "No Entry" data to download.', 'blue'); // TRANSLATED
+                showTemporaryMessage('No "No Entry" data to download.', 'blue');
                 return;
             }
             
@@ -990,34 +1061,33 @@
             link.click();
             document.body.removeChild(link);
             
-            showTemporaryMessage('No Entry Products data download complete.', 'green'); // TRANSLATED
+            showTemporaryMessage('No Entry Products data download complete.', 'green');
         }
 
 
         function playBeep(isError = false) {
             try {
-                // FIX: Was 'audioCtxt', corrected to 'audioContext'
                 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioContext.createOscillator(); // FIX
-                const gain = audioContext.createGain(); // FIX
+                const oscillator = audioContext.createOscillator();
+                const gain = audioContext.createGain();
 
                 oscillator.connect(gain);
-                gain.connect(audioContext.destination); // FIX
+                gain.connect(audioContext.destination);
 
                 if (isError) {
                     // Lower frequency square wave for error sound
                     oscillator.type = 'square';
-                    oscillator.frequency.setValueAtTime(220, audioContext.currentTime); // FIX
-                    gain.gain.setValueAtTime(0.3, audioContext.currentTime); // FIX
+                    oscillator.frequency.setValueAtTime(220, audioContext.currentTime);
+                    gain.gain.setValueAtTime(0.3, audioContext.currentTime);
                 } else {
                     // Higher frequency sine wave for success sound
                     oscillator.type = 'sine';
-                    oscillator.frequency.setValueAtTime(1200, audioContext.currentTime); // FIX
-                    gain.gain.setValueAtTime(0.2, audioContext.currentTime); // FIX
+                    oscillator.frequency.setValueAtTime(1200, audioContext.currentTime);
+                    gain.gain.setValueAtTime(0.2, audioContext.currentTime);
                 }
 
                 oscillator.start();
-                oscillator.stop(audioContext.currentTime + 0.1); // FIX
+                oscillator.stop(audioContext.currentTime + 0.1);
             } catch (e) {
                 console.warn("Could not play beep sound.", e);
             }
@@ -1048,4 +1118,3 @@
     </script>
 </body>
 </html>
-
